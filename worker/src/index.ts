@@ -47,8 +47,12 @@ export const validateGenerateBody = (value: unknown): string => {
 const accessConfig = (env: Env): AccessConfig => ({ issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE, jwksUrl: env.ACCESS_JWKS_URL });
 
 const authenticate = async (request: Request, env: Env): Promise<Response | null> => {
+  const config = accessConfig(env);
+  if (!config.issuer || !config.audience || !config.jwksUrl) {
+    return jsonResponse({ error: 'Access configuration required' }, 503);
+  }
   try {
-    await verifyAccessJwt(request, accessConfig(env));
+    await verifyAccessJwt(request, config);
     return null;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Access denied';
@@ -131,4 +135,3 @@ export default {
 };
 
 export { RunGenerationLock };
-

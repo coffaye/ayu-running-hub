@@ -13,7 +13,7 @@ import {
   runExistsInActivities,
 } from '../src/core.ts';
 import { validateAccessClaims } from '../src/auth.ts';
-import { validateGenerateBody } from '../src/index.ts';
+import app, { validateGenerateBody } from '../src/index.ts';
 import { renderGeneratePage } from '../src/pages.ts';
 
 test('run identity is string-only and lookup is based on master activity data', () => {
@@ -75,6 +75,21 @@ test('Access claims require issuer, audience and a live expiry', () => {
   assert.throws(() => validateAccessClaims({ iss: 'wrong', aud: 'ayu', exp: 200 }, config, 100));
   assert.throws(() => validateAccessClaims({ iss: config.issuer, aud: 'other', exp: 200 }, config, 100));
   assert.throws(() => validateAccessClaims({ iss: config.issuer, aud: 'ayu', exp: 100 }, config, 100));
+});
+
+test('unconfigured Access fails closed before any generation route can run', async () => {
+  const response = await app.fetch(
+    new Request('https://staging.example/generate?run_id=123'),
+    {
+      REPORT_GENERATION_LOCK: {} as never,
+      HUB_ACTIONS_TOKEN: '',
+      ACCESS_ISSUER: '',
+      ACCESS_AUDIENCE: '',
+      ACCESS_JWKS_URL: '',
+    }
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'Access configuration required' });
 });
 
 test('staging workflow is pinned to master input data and report-only output', () => {
