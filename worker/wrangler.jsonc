@@ -8,9 +8,7 @@
     "HUB_REPOSITORY": "coffaye/ayu-running-hub",
     "HUB_WORKFLOW": "generate-report.yml",
     "RUNNING_PAGE_REPOSITORY": "coffaye/running_page",
-    "ACCESS_ISSUER": "",
-    "ACCESS_AUDIENCE": "",
-    "ACCESS_JWKS_URL": ""
+    "REPORT_AUTH_USERNAME": "ayu"
   },
   "durable_objects": {
     "bindings": [
@@ -21,4 +19,3 @@
     { "tag": "v1", "new_sqlite_classes": ["RunGenerationLock"] }
   ]
 }
-

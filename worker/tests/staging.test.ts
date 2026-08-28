@@ -12,7 +12,11 @@ import {
   redactSecrets,
   runExistsInActivities,
 } from '../src/core.ts';
-import { validateAccessClaims } from '../src/auth.ts';
+import {
+  parseBasicCredentials,
+  timingSafeEqual,
+  verifyBasicCredentials,
+} from '../src/auth.ts';
 import app, { validateGenerateBody } from '../src/index.ts';
 import { renderGeneratePage } from '../src/pages.ts';
 
@@ -69,27 +73,60 @@ test('workflow status, path allowlist and secret redaction are explicit', () => 
   assert.equal(safe.includes('token'), false);
 });
 
-test('Access claims require issuer, audience and a live expiry', () => {
-  const config = { issuer: 'https://access.example', audience: 'ayu', jwksUrl: 'https://access.example/.well-known/jwks.json' };
-  assert.equal(validateAccessClaims({ iss: config.issuer, aud: ['ayu'], exp: 200 }, config, 100).aud[0], 'ayu');
-  assert.throws(() => validateAccessClaims({ iss: 'wrong', aud: 'ayu', exp: 200 }, config, 100));
-  assert.throws(() => validateAccessClaims({ iss: config.issuer, aud: 'other', exp: 200 }, config, 100));
-  assert.throws(() => validateAccessClaims({ iss: config.issuer, aud: 'ayu', exp: 100 }, config, 100));
+const authEnv = {
+  REPORT_GENERATION_LOCK: {} as never,
+  HUB_ACTIONS_TOKEN: 'unused-test-token',
+  REPORT_AUTH_USERNAME: 'ayu',
+  REPORT_AUTH_PASSWORD: 'test-password',
+};
+const basicConfig = { username: 'ayu', password: 'test-password' };
+
+const basic = (username: string, password: string): string =>
+  `Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`;
+
+test('Basic Auth parses credentials and compares digests without early-exit strings', async () => {
+  assert.deepEqual(parseBasicCredentials(basic('ayu', 'test-password')), {
+    username: 'ayu',
+    password: 'test-password',
+  });
+  assert.equal(parseBasicCredentials(null), null);
+  assert.equal(parseBasicCredentials('Bearer token'), null);
+  assert.equal(parseBasicCredentials('Basic ???'), null);
+  assert.equal(await verifyBasicCredentials(basic('ayu', 'test-password'), basicConfig), true);
+  assert.equal(await verifyBasicCredentials(basic('wrong', 'test-password'), basicConfig), false);
+  assert.equal(await verifyBasicCredentials(basic('ayu', 'wrong'), basicConfig), false);
+  assert.equal(await verifyBasicCredentials(null, basicConfig), false);
+  assert.equal(await timingSafeEqual('same', 'same'), true);
+  assert.equal(await timingSafeEqual('same', 'different'), false);
 });
 
-test('unconfigured Access fails closed before any generation route can run', async () => {
+test('missing, malformed and incorrect Basic Auth uniformly return 401 with a challenge', async () => {
+  for (const authorization of [undefined, 'Bearer token', 'Basic ???', basic('wrong', 'test-password'), basic('ayu', 'wrong')]) {
+    const request = new Request('https://staging.example/generate?run_id=123', {
+      headers: authorization ? { authorization } : undefined,
+    });
+    const response = await app.fetch(request, authEnv);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('www-authenticate'), 'Basic realm="Ayu Running"');
+    assert.deepEqual(await response.json(), { error: 'Unauthorized' });
+  }
+});
+
+test('all generation and status paths require Basic Auth, while a valid user reaches the page', async () => {
+  for (const path of ['/generate?run_id=123', '/api/generate', '/api/status/123']) {
+    const response = await app.fetch(new Request(`https://staging.example${path}`), authEnv);
+    assert.equal(response.status, 401);
+  }
   const response = await app.fetch(
-    new Request('https://staging.example/generate?run_id=123'),
-    {
-      REPORT_GENERATION_LOCK: {} as never,
-      HUB_ACTIONS_TOKEN: '',
-      ACCESS_ISSUER: '',
-      ACCESS_AUDIENCE: '',
-      ACCESS_JWKS_URL: '',
-    }
+    new Request('https://staging.example/generate?run_id=123', {
+      headers: { authorization: basic('ayu', 'test-password') },
+    }),
+    authEnv
   );
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: 'Access configuration required' });
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /run_id/);
+  assert.doesNotMatch(html, /test-password/);
 });
 
 test('staging workflow is pinned to master input data and report-only output', () => {

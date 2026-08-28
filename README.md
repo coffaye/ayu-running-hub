@@ -68,11 +68,12 @@ and writes only `coffaye/running_page@ayu-report-e2e` report files. The
 workflow uses per-run concurrency and an atomic HTML/manifest transaction.
 
 `worker/` is the separately deployable `ayu-running-hub-staging` Cloudflare
-Worker. It is Access-protected, validates the Access JWT itself, performs a
-master run lookup, and uses a SQLite-backed Durable Object lock before
-dispatching the workflow. Configure `HUB_ACTIONS_TOKEN` as a Cloudflare Secret;
-configure `DEEPSEEK_API_KEY` and `RUNNING_PAGE_WRITE_TOKEN` as GitHub Actions
-Secrets. No production Pages or `running_page/master` write is part of staging.
+Worker. It is protected by Worker-level HTTP Basic Auth, performs a master run
+lookup, and uses a SQLite-backed Durable Object lock before dispatching the
+workflow. Configure `REPORT_AUTH_USERNAME` as a normal Worker variable and
+`REPORT_AUTH_PASSWORD` plus `HUB_ACTIONS_TOKEN` as Cloudflare Secrets; configure
+`DEEPSEEK_API_KEY` and `RUNNING_PAGE_WRITE_TOKEN` as GitHub Actions Secrets. No
+production Pages or `running_page/master` write is part of staging.
 
 Each newly generated Manifest entry records both the compatibility field
 `engineVersion` and the Hub identity field `hubVersion`, plus the current Hub

@@ -35,6 +35,6 @@ published.
 Pin a released Hub tag or exact commit. Set `AYU_ENGINE_COMMIT` in the Action
 runtime to that SHA. The staging data source is always
 `coffaye/running_page@master`, while output is restricted to the
-`ayu-report-e2e` branch. The Worker owns authentication, run lookup and
+`ayu-report-e2e` branch. The Worker owns HTTP Basic Auth, run lookup and
 idempotency; the Hub owns parsing, analysis boundaries, validation and render
 semantics; `running_page` owns the public Manifest, HTML files and viewer UI.

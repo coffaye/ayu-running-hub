@@ -1,4 +1,4 @@
-import { verifyAccessJwt, type AccessConfig } from './auth.ts';
+import { unauthorizedResponse, verifyBasicCredentials } from './auth.ts';
 import { normalizeRunId, type LockRecord } from './core.ts';
 import { GithubClient } from './github.ts';
 import { RunGenerationLock } from './lock.ts';
@@ -15,9 +15,8 @@ export interface DurableObjectNamespaceLike {
 export interface Env {
   REPORT_GENERATION_LOCK: DurableObjectNamespaceLike;
   HUB_ACTIONS_TOKEN: string;
-  ACCESS_ISSUER: string;
-  ACCESS_AUDIENCE: string;
-  ACCESS_JWKS_URL: string;
+  REPORT_AUTH_USERNAME?: string;
+  REPORT_AUTH_PASSWORD?: string;
   HUB_REPOSITORY?: string;
   HUB_WORKFLOW?: string;
   RUNNING_PAGE_REPOSITORY?: string;
@@ -44,21 +43,12 @@ export const validateGenerateBody = (value: unknown): string => {
   return normalizeRunId((value as Record<string, unknown>).runId);
 };
 
-const accessConfig = (env: Env): AccessConfig => ({ issuer: env.ACCESS_ISSUER, audience: env.ACCESS_AUDIENCE, jwksUrl: env.ACCESS_JWKS_URL });
-
 const authenticate = async (request: Request, env: Env): Promise<Response | null> => {
-  const config = accessConfig(env);
-  if (!config.issuer || !config.audience || !config.jwksUrl) {
-    return jsonResponse({ error: 'Access configuration required' }, 503);
-  }
-  try {
-    await verifyAccessJwt(request, config);
-    return null;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Access denied';
-    const status = message === 'Access configuration required' ? 503 : 401;
-    return jsonResponse({ error: status === 503 ? 'Access configuration required' : 'Unauthorized' }, status);
-  }
+  const valid = await verifyBasicCredentials(request.headers.get('authorization'), {
+    username: env.REPORT_AUTH_USERNAME ?? 'ayu',
+    password: env.REPORT_AUTH_PASSWORD ?? '',
+  });
+  return valid ? null : unauthorizedResponse();
 };
 
 const generate = async (request: Request, env: Env): Promise<Response> => {

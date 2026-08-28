@@ -22,8 +22,8 @@ consumers, not dependencies of the Hub.
 
 For Phase 4 staging, the caller is intentionally included as a separate
 boundary under `.github/workflows/` and `worker/`: the workflow owns the
-report-build transaction and staging-branch push, while the Worker owns
-Access validation, run lookup, idempotency and status normalization. Neither
+report-build transaction and staging-branch push, while the Worker owns HTTP
+Basic Auth, run lookup, idempotency and status normalization. Neither
 boundary is a production deployment or writes `running_page/master`.
 
 ## Data and privacy rules
