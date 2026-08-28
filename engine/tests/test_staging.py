@@ -19,6 +19,7 @@ from ayu_report_engine.adapters.running_page import load_running_page_context
 from ayu_report_engine.analysis import FixtureAnalyzer
 from ayu_report_engine.deepseek import DeepSeekConfig
 from generate_report import manifest_entry, replace_report_and_manifest
+import publish_report as publication
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -98,6 +99,79 @@ class StagingBuildTests(unittest.TestCase):
                     )
             self.assertEqual(old_report.read_text(encoding="utf-8"), "old html")
             self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["reports"], {})
+
+    def test_manifest_merge_preserves_other_entries_and_replaces_one(self) -> None:
+        manifest = {
+            "schemaVersion": 1,
+            "generatedAt": "2030-03-05T00:00:00Z",
+            "reports": {"1": {"runId": "1"}, "2": {"runId": "2"}, "3": {"runId": "3"}},
+        }
+        with self.assertRaises(ValueError):
+            publication.merge_manifest(manifest, "0", {"runId": "0"}, "2030-03-05T00:00:01Z")
+        merged = publication.merge_manifest(manifest, "123", {"runId": "123"}, "2030-03-05T00:00:01Z")
+        self.assertEqual(set(merged["reports"]), {"1", "2", "3", "123"})
+        replaced = publication.merge_manifest(merged, "2", {"runId": "2", "generatedAt": "new"}, "2030-03-05T00:00:02Z")
+        self.assertEqual(set(replaced["reports"]), {"1", "2", "3", "123"})
+        self.assertEqual(replaced["reports"]["2"]["generatedAt"], "new")
+
+    def test_publication_retries_from_latest_remote_manifest_after_push_rejection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report_url = "reports/daily/2030-03-05/123.html"
+            report_path = root / "public" / report_url
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text("generated B", encoding="utf-8")
+            manifest_path = root / "public" / "reports" / "manifest.json"
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            local_manifest = {
+                "schemaVersion": 1,
+                "generatedAt": "2030-03-05T00:00:00Z",
+                "reports": {
+                    "A": {"runId": "A"},
+                    "123": {"runId": "123", "localDate": "2030-03-05", "url": report_url},
+                },
+            }
+            manifest_path.write_text(json.dumps(local_manifest), encoding="utf-8")
+            remote_manifest = {"schemaVersion": 1, "generatedAt": "old", "reports": {"A": {"runId": "A"}}}
+            push_calls = 0
+
+            def fake_git(_repo: Path, args: list[str]) -> str:
+                nonlocal remote_manifest, push_calls
+                command = args[0]
+                if command == "reset":
+                    manifest_path.write_text(json.dumps(remote_manifest), encoding="utf-8")
+                elif command == "push":
+                    if push_calls == 0:
+                        push_calls += 1
+                        remote_manifest = {
+                            "schemaVersion": 1,
+                            "generatedAt": "other",
+                            "reports": {"A": {"runId": "A"}, "B": {"runId": "B"}},
+                        }
+                        raise publication.GitCommandError("git push")
+                    push_calls += 1
+                    remote_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                elif command == "diff" and "--cached" in args:
+                    return "public/reports/manifest.json\npublic/reports/daily/2030-03-05/123.html\n"
+                elif command == "diff":
+                    return "public/reports/manifest.json\npublic/reports/daily/2030-03-05/123.html\n"
+                elif command == "ls-files":
+                    return ""
+                elif command == "rev-parse":
+                    return "final-sha\n"
+                return ""
+
+            with patch.object(publication, "run_git", side_effect=fake_git):
+                result = publication.publish_report(
+                    root,
+                    run_id="123",
+                    artifact_root=root / "runner-temp",
+                    max_attempts=3,
+                    sleep=lambda _seconds: None,
+                    jitter=lambda: 0,
+                )
+            self.assertEqual(result["publishAttempt"], 2)
+            self.assertEqual(set(remote_manifest["reports"]), {"A", "B", "123"})
 
 
 if __name__ == "__main__":

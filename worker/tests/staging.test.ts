@@ -11,13 +11,14 @@ import {
   parseDispatchResponse,
   redactSecrets,
   runExistsInActivities,
+  type LockRecord,
 } from '../src/core.ts';
 import {
   parseBasicCredentials,
   timingSafeEqual,
   verifyBasicCredentials,
 } from '../src/auth.ts';
-import app, { validateGenerateBody } from '../src/index.ts';
+import app, { createApp, validateGenerateBody } from '../src/index.ts';
 import { renderGeneratePage } from '../src/pages.ts';
 import { GithubClient } from '../src/github.ts';
 
@@ -142,6 +143,81 @@ test('Basic Auth parses credentials and compares digests without early-exit stri
   assert.equal(await timingSafeEqual('same', 'different'), false);
 });
 
+test('same-run reserved race waits for the first dispatch and returns one workflow ID', async () => {
+  let record: LockRecord | null = null;
+  let dispatchCalls = 0;
+  let markDispatchStarted!: () => void;
+  let releaseDispatch!: () => void;
+  const dispatchStarted = new Promise<void>((resolve) => {
+    markDispatchStarted = resolve;
+  });
+  const stub = {
+    async fetch(request: Request): Promise<Response> {
+      const url = new URL(request.url);
+      if (url.pathname === '/acquire') {
+        const current = record as Parameters<typeof acquireLock>[0];
+        const result = acquireLock(current, url.searchParams.get('run_id') ?? '', url.searchParams.get('request_id') ?? '');
+        if (result.created) record = result.record;
+        return Response.json(result);
+      }
+      if (url.pathname === '/status') return Response.json({ record });
+      if (url.pathname === '/workflow' || url.pathname === '/release') {
+        if (!record) return Response.json({ record: null }, { status: 404 });
+        const body = (await request.json()) as Record<string, unknown>;
+        record = {
+          ...record,
+          ...(typeof body.workflowRunId === 'number' ? { workflowRunId: body.workflowRunId } : {}),
+          ...(typeof body.workflowUrl === 'string' ? { workflowUrl: body.workflowUrl } : {}),
+          ...(typeof body.state === 'string' ? { state: body.state as LockRecord['state'] } : {}),
+        };
+        return Response.json({ record });
+      }
+      return new Response('Not found', { status: 404 });
+    },
+  };
+  const fakeClient = {
+    runExists: async () => true,
+    dispatch: async () => {
+      dispatchCalls += 1;
+      markDispatchStarted();
+      return new Promise<{ workflowRunId: number; runUrl: string; htmlUrl: string }>((resolve) => {
+        releaseDispatch = () => resolve({ workflowRunId: 77, runUrl: 'https://ci/run/77', htmlUrl: 'https://github/run/77' });
+      });
+    },
+    getWorkflowRun: async () => ({ status: 'queued', conclusion: null, htmlUrl: 'https://github/run/77' }),
+  };
+  const testApp = createApp({
+    createGithubClient: () => fakeClient,
+    sleep: async () => {
+      releaseDispatch();
+      await Promise.resolve();
+    },
+  });
+  const env = {
+    ...authEnv,
+    REPORT_GENERATION_LOCK: {
+      idFromName: () => ({}),
+      get: () => stub,
+    },
+  };
+  const request = () => new Request('https://staging.example/api/generate', {
+    method: 'POST',
+    headers: { authorization: basic('ayu', 'test-password'), 'content-type': 'application/json' },
+    body: JSON.stringify({ runId: '123' }),
+  });
+
+  const responseA = testApp.fetch(request(), env);
+  await dispatchStarted;
+  const responseB = testApp.fetch(request(), env);
+  const [a, b] = await Promise.all([responseA, responseB]);
+  const valueA = await a.json() as Record<string, unknown>;
+  const valueB = await b.json() as Record<string, unknown>;
+  assert.equal(dispatchCalls, 1);
+  assert.equal(valueA.requestId, valueB.requestId);
+  assert.equal(valueA.workflowRunId, 77);
+  assert.equal(valueB.workflowRunId, 77);
+});
+
 test('missing, malformed and incorrect Basic Auth uniformly return 401 with a challenge', async () => {
   for (const authorization of [undefined, 'Bearer token', 'Basic ???', basic('wrong', 'test-password'), basic('ayu', 'wrong')]) {
     const request = new Request('https://staging.example/generate?run_id=123', {
@@ -179,8 +255,11 @@ test('staging workflow is pinned to master input data and report-only output', (
   assert.match(workflow, /group: ayu-report-\$\{\{ inputs\.run_id \}\}/);
   assert.match(workflow, /ref: master/);
   assert.match(workflow, /ref: ayu-report-e2e/);
-  assert.match(workflow, /public\/reports\/manifest\.json\|public\/reports\/daily\/\*/);
+  assert.match(workflow, /scripts\/publish_report\.py/);
+  assert.match(workflow, /ayu-report-publish/);
+  assert.match(workflow, /--max-attempts 5/);
   assert.doesNotMatch(workflow, /ref: master[\s\S]*git push origin HEAD:master/);
+  assert.doesNotMatch(workflow, /git push origin HEAD:ayu-report-e2e/);
 });
 
 test('generate page has no GET side effect and reports staging completion text', async () => {

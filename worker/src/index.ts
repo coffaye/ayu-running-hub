@@ -12,6 +12,25 @@ export interface DurableObjectNamespaceLike {
   get: (id: DurableObjectIdLike) => DurableObjectStubLike;
 }
 
+export interface GithubClientLike {
+  runExists: (runId: string) => Promise<boolean>;
+  dispatch: (runId: string, requestId: string) => Promise<{
+    workflowRunId: number;
+    runUrl: string;
+    htmlUrl: string;
+  }>;
+  getWorkflowRun: (workflowRunId: number) => Promise<{
+    status: string;
+    conclusion: string | null;
+    htmlUrl: string | null;
+  }>;
+}
+
+export interface WorkerDependencies {
+  createGithubClient?: (env: Env) => GithubClientLike;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
 export interface Env {
   REPORT_GENERATION_LOCK: DurableObjectNamespaceLike;
   HUB_ACTIONS_TOKEN: string;
@@ -30,6 +49,9 @@ const clientFor = (env: Env) =>
     sourceRepository: env.RUNNING_PAGE_REPOSITORY ?? 'coffaye/running_page',
   });
 
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 const lockStub = (env: Env, runId: string): DurableObjectStubLike =>
   env.REPORT_GENERATION_LOCK.get(env.REPORT_GENERATION_LOCK.idFromName(`run:${runId}`));
 
@@ -43,6 +65,39 @@ export const validateGenerateBody = (value: unknown): string => {
   return normalizeRunId((value as Record<string, unknown>).runId);
 };
 
+export interface WorkflowAssignmentWaitOptions {
+  initialIntervalMs?: number;
+  maxIntervalMs?: number;
+  maxWaitMs?: number;
+}
+
+export const awaitWorkflowAssignment = async (
+  stub: DurableObjectStubLike,
+  runId: string,
+  initialRecord: LockRecord,
+  sleep: (milliseconds: number) => Promise<void> = delay,
+  options: WorkflowAssignmentWaitOptions = {}
+): Promise<LockRecord> => {
+  if (initialRecord.state !== 'reserved' || initialRecord.workflowRunId !== null) return initialRecord;
+  const initialIntervalMs = options.initialIntervalMs ?? 75;
+  const maxIntervalMs = options.maxIntervalMs ?? 250;
+  const maxWaitMs = options.maxWaitMs ?? 5000;
+  const startedAt = Date.now();
+  let intervalMs = initialIntervalMs;
+  let current = initialRecord;
+  while (Date.now() - startedAt < maxWaitMs) {
+    await sleep(Math.min(intervalMs, Math.max(0, maxWaitMs - (Date.now() - startedAt))));
+    const response = await stub.fetch(lockRequest('/status', runId));
+    if (!response.ok) return current;
+    const value = (await response.json()) as { record: LockRecord | null };
+    if (!value.record) return current;
+    current = value.record;
+    if (current.workflowRunId !== null || current.state === 'failure' || current.state === 'success') return current;
+    intervalMs = Math.min(maxIntervalMs, intervalMs * 2);
+  }
+  return current;
+};
+
 const authenticate = async (request: Request, env: Env): Promise<Response | null> => {
   const valid = await verifyBasicCredentials(request.headers.get('authorization'), {
     username: env.REPORT_AUTH_USERNAME ?? 'ayu',
@@ -51,20 +106,23 @@ const authenticate = async (request: Request, env: Env): Promise<Response | null
   return valid ? null : unauthorizedResponse();
 };
 
-const generate = async (request: Request, env: Env): Promise<Response> => {
+const generate = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
   let runId: string;
   try {
     runId = validateGenerateBody(await request.json());
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'invalid request' }, 400);
   }
-  const client = clientFor(env);
+  const client = dependencies.createGithubClient(env);
   if (!(await client.runExists(runId))) return jsonResponse({ error: 'run_id not found in running_page master' }, 404);
   const requestId = crypto.randomUUID();
   const stub = lockStub(env, runId);
   const acquired = await stub.fetch(lockRequest(`/acquire?request_id=${encodeURIComponent(requestId)}`, runId));
   const acquiredValue = (await acquired.json()) as { created: boolean; record: LockRecord };
-  if (!acquiredValue.created) return jsonResponse(statusFromLock(acquiredValue.record), 202);
+  if (!acquiredValue.created) {
+    const settled = await awaitWorkflowAssignment(stub, runId, acquiredValue.record, dependencies.sleep);
+    return jsonResponse(statusFromLock(settled), 202);
+  }
   try {
     const dispatch = await client.dispatch(runId, requestId);
     const updated = await stub.fetch(lockRequest('/workflow', runId, { method: 'POST', body: JSON.stringify({ workflowRunId: dispatch.workflowRunId, workflowUrl: dispatch.htmlUrl, state: 'queued' }) }));
@@ -76,7 +134,7 @@ const generate = async (request: Request, env: Env): Promise<Response> => {
   }
 };
 
-const status = async (runId: string, env: Env): Promise<Response> => {
+const status = async (runId: string, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
   const stub = lockStub(env, runId);
   const response = await stub.fetch(lockRequest('/status', runId));
   if (!response.ok) return jsonResponse({ error: 'generation not found' }, 404);
@@ -86,7 +144,7 @@ const status = async (runId: string, env: Env): Promise<Response> => {
     return jsonResponse(statusFromLock(value.record));
   }
   try {
-    const provider = await clientFor(env).getWorkflowRun(value.record.workflowRunId);
+    const provider = await dependencies.createGithubClient(env).getWorkflowRun(value.record.workflowRunId);
     const normalized = statusFromGithub(value.record, provider);
     if (normalized.state === 'success' || normalized.state === 'failure') {
       await stub.fetch(lockRequest('/release', runId, { method: 'POST', body: JSON.stringify({ state: normalized.state, workflowUrl: normalized.runUrl }) }));
@@ -99,29 +157,39 @@ const status = async (runId: string, env: Env): Promise<Response> => {
   }
 };
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const denied = await authenticate(request, env);
-    if (denied) return denied;
-    const url = new URL(request.url);
-    if (request.method === 'GET' && url.pathname === '/generate') {
-      try {
-        return renderGeneratePage(normalizeRunId(url.searchParams.get('run_id') ?? ''));
-      } catch {
-        return jsonResponse({ error: 'invalid run_id' }, 400);
+export const createApp = (overrides: WorkerDependencies = {}) => {
+  const dependencies: Required<WorkerDependencies> = {
+    createGithubClient: overrides.createGithubClient ?? clientFor,
+    sleep: overrides.sleep ?? delay,
+  };
+  return {
+    async fetch(request: Request, env: Env): Promise<Response> {
+      const denied = await authenticate(request, env);
+      if (denied) return denied;
+      const url = new URL(request.url);
+      if (request.method === 'GET' && url.pathname === '/generate') {
+        try {
+          return renderGeneratePage(normalizeRunId(url.searchParams.get('run_id') ?? ''));
+        } catch {
+          return jsonResponse({ error: 'invalid run_id' }, 400);
+        }
       }
-    }
-    if (request.method === 'POST' && url.pathname === '/api/generate') return generate(request, env);
-    const match = url.pathname.match(/^\/api\/status\/([^/]+)$/);
-    if (request.method === 'GET' && match) {
-      try {
-        return status(normalizeRunId(decodeURIComponent(match[1])), env);
-      } catch {
-        return jsonResponse({ error: 'invalid run_id' }, 400);
+      if (request.method === 'POST' && url.pathname === '/api/generate') return generate(request, env, dependencies);
+      const match = url.pathname.match(/^\/api\/status\/([^/]+)$/);
+      if (request.method === 'GET' && match) {
+        try {
+          return status(normalizeRunId(decodeURIComponent(match[1])), env, dependencies);
+        } catch {
+          return jsonResponse({ error: 'invalid run_id' }, 400);
+        }
       }
-    }
-    return new Response('Not found', { status: 404 });
-  },
+      return new Response('Not found', { status: 404 });
+    },
+  };
 };
+
+const app = createApp();
+
+export default app;
 
 export { RunGenerationLock };

@@ -75,39 +75,14 @@ jobs:
             --run-id "$RUN_ID" \
             --request-id "$REQUEST_ID"
 
-      - name: Verify the output allowlist
-        working-directory: running-page-output
-        run: |
-          changed="$(git diff --name-only)"
-          if [ -n "$changed" ]; then
-            while IFS= read -r path; do
-              case "$path" in
-                public/reports/manifest.json|public/reports/daily/*) ;;
-                *) echo "Unexpected modified path: $path"; exit 1 ;;
-              esac
-            done <<< "$changed"
-          fi
-
-      - name: Commit and push only the staging report files
-        working-directory: running-page-output
+      - name: Publish report with conflict-safe manifest merge
         env:
           RUN_ID: ${{ inputs.run_id }}
           REQUEST_ID: ${{ inputs.request_id }}
         run: |
-          git config user.name "ayu-running-hub[bot]"
-          git config user.email "ayu-running-hub[bot]@users.noreply.github.com"
-          git add public/reports/manifest.json public/reports/daily
-          staged="$(git diff --cached --name-only)"
-          if [ -z "$staged" ]; then
-            echo "No report changes to commit"
-            exit 0
-          fi
-          while IFS= read -r path; do
-            case "$path" in
-              public/reports/manifest.json|public/reports/daily/*) ;;
-              *) echo "Unexpected staged path: $path"; exit 1 ;;
-            esac
-          done <<< "$staged"
-          git commit -m "生成 Ayu staging 日报 ${RUN_ID} (${REQUEST_ID})"
-          git push origin HEAD:ayu-report-e2e
-
+          python "$GITHUB_WORKSPACE/scripts/publish_report.py" \
+            --target-root "$GITHUB_WORKSPACE/running-page-output" \
+            --run-id "$RUN_ID" \
+            --request-id "$REQUEST_ID" \
+            --artifact-root "$RUNNER_TEMP/ayu-report-publish" \
+            --max-attempts 5
