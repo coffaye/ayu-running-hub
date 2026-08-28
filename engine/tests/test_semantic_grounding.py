@@ -111,6 +111,7 @@ class SemanticGroundingTests(unittest.TestCase):
             "load level": ("load", "负荷中等"),
             "completion score": ("score", 7),
             "completion status": ("status", "完成"),
+            "completion claim in headline": ("verdict", "我完成了这次训练任务"),
         }
         for name, (field, value) in cases.items():
             with self.subTest(name=name):
