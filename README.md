@@ -73,3 +73,8 @@ master run lookup, and uses a SQLite-backed Durable Object lock before
 dispatching the workflow. Configure `HUB_ACTIONS_TOKEN` as a Cloudflare Secret;
 configure `DEEPSEEK_API_KEY` and `RUNNING_PAGE_WRITE_TOKEN` as GitHub Actions
 Secrets. No production Pages or `running_page/master` write is part of staging.
+
+Each newly generated Manifest entry records both the compatibility field
+`engineVersion` and the Hub identity field `hubVersion`, plus the current Hub
+commit, schema, prompt, renderer, model and reasoning settings. Existing
+entries remain readable during the staging migration.
