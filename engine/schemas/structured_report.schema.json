@@ -57,7 +57,8 @@
     },
     "verdict": {
       "type": "string",
-      "minLength": 1
+      "minLength": 10,
+      "maxLength": 22
     },
     "trainingPurpose": {
       "type": [

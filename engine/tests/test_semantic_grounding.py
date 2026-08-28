@@ -7,7 +7,7 @@ import unittest
 
 from ayu_report_engine.context import DailyRunContext
 from ayu_report_engine.errors import SchemaValidationError
-from ayu_report_engine.report import report_from_model_output
+from ayu_report_engine.report import report_from_model_output, validate_verdict
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -45,7 +45,7 @@ def grounding_context() -> DailyRunContext:
 
 def conservative_output() -> dict:
     return {
-        "verdict": "当前记录可用于描述观测事实，关键训练判断保持未知。",
+        "verdict": "这次训练结果暂不能定性",
         "trainingPurpose": None,
         "completion": {"status": None, "trainingType": None, "score": None},
         "evidence": [
@@ -144,6 +144,38 @@ class SemanticGroundingTests(unittest.TestCase):
         self.assertIn("无法判断配速稳定性", report.evidence[1]["interpretation"])
         self.assertEqual(report.load["assessment"], "负荷未知。")
         self.assertEqual(report.recovery["assessment"], "恢复状态不可用。")
+
+
+class VerdictTitleTests(unittest.TestCase):
+    def test_short_conclusion_examples_are_allowed(self) -> None:
+        for verdict in (
+            "第二组还能顶住，第三组没完成。",
+            "前两组完成，第三组中止。",
+            "前段还能维持，后段没顶住。",
+            "Ayu完成了大半但未撑住",
+        ):
+            with self.subTest(verdict=verdict):
+                validate_verdict(verdict)
+
+    def test_visible_character_boundaries_are_enforced(self) -> None:
+        validate_verdict("1234567890")
+        validate_verdict("中文标点也算字符，正好达标")
+        for verdict in ("太短了", "这是一条明确超过二十二个可见字符限制的标题内容"):
+            with self.subTest(verdict=verdict):
+                with self.assertRaises(SchemaValidationError):
+                    validate_verdict(verdict)
+
+    def test_verdict_rejects_paragraph_or_recommendation_style(self) -> None:
+        for verdict in (
+            "前段完成，后段中止。原因是配速下降。",
+            "建议下次注意配速控制",
+            "今天应该可以尝试降低强度",
+            "训练结果结合心率和配速，因此需要谨慎判断",
+            "结论：前段完成，后段中止",
+        ):
+            with self.subTest(verdict=verdict):
+                with self.assertRaises(SchemaValidationError):
+                    validate_verdict(verdict)
 
 
 if __name__ == "__main__":

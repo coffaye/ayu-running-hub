@@ -97,6 +97,9 @@ _PHYSIOLOGY_CLAIMS = (
     r"生理代价(?:较低|较高|中等|明显|偏高|偏低)",
     r"代价(?:较低|较高|中等|明显|偏高|偏低)",
 )
+_VERDICT_SENTENCE_END = re.compile(r"[。！？!?]")
+_VERDICT_SUGGESTION = re.compile(r"(?:建议|应该|可以尝试|下次|下一次|不妨|需要注意)")
+_VERDICT_EXPLANATORY_LINK = re.compile(r"(?:因为|由于|因此|说明|表明|意味着|结合|同时|从而)")
 
 
 def _is_unknown_text(value: object) -> bool:
@@ -275,6 +278,26 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
             raise SchemaValidationError("physiologyCost lacks supporting physiological facts")
 
 
+def validate_verdict(verdict: str) -> None:
+    """Keep the Hero verdict a short, complete conclusion rather than a paragraph."""
+
+    if not isinstance(verdict, str):
+        raise SchemaValidationError("verdict must be a string")
+    visible_length = len(verdict)
+    if visible_length < 10 or visible_length > 22:
+        raise SchemaValidationError("verdict must contain 10-22 visible characters")
+    if "\n" in verdict or "\r" in verdict:
+        raise SchemaValidationError("verdict must be a single line")
+    if len(_VERDICT_SENTENCE_END.findall(verdict)) > 1:
+        raise SchemaValidationError("verdict must not contain multiple sentences")
+    if _VERDICT_SUGGESTION.search(verdict):
+        raise SchemaValidationError("verdict must not contain recommendation language")
+    if len(_VERDICT_EXPLANATORY_LINK.findall(verdict)) > 1:
+        raise SchemaValidationError("verdict must remain a short conclusion")
+    if any(mark in verdict for mark in (":", "：", ";", "；")):
+        raise SchemaValidationError("verdict must not use evidence-list formatting")
+
+
 def _check_text(value: object, field: str, *, nullable: bool = False) -> None:
     if value is None and nullable:
         return
@@ -358,6 +381,7 @@ class StructuredReport:
         except ValueError as exc:
             raise SchemaValidationError("reportDate is not a real calendar date") from exc
         _check_narrative(self.verdict, "verdict")
+        validate_verdict(self.verdict)
         _check_narrative(self.training_purpose, "trainingPurpose", nullable=True)
         if not isinstance(self.completion, Mapping):
             raise SchemaValidationError("completion must be an object")

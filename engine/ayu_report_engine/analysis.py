@@ -24,9 +24,9 @@ class FixtureAnalyzer:
         purpose = "结构化课表" if workout is not None else None
         training_type = "structured" if workout is not None else None
         verdict = (
-            "已识别结构化训练证据，完成质量需要实际课表对照"
+            "课表已识别，完成情况待核对"
             if workout is not None
-            else "基础跑步数据已规范化，但训练意图未知"
+            else "这次训练结果暂不能定性"
         )
         evidence = []
         for metric_ref, value in (

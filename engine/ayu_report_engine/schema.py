@@ -16,7 +16,7 @@ def _metric_ref_schema() -> dict[str, Any]:
 
 def _semantic_properties() -> dict[str, Any]:
     return {
-        "verdict": {"type": "string", "minLength": 1},
+        "verdict": {"type": "string", "minLength": 10, "maxLength": 22},
         "trainingPurpose": {"type": ["string", "null"]},
         "completion": {
             "type": "object",

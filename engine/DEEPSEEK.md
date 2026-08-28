@@ -47,6 +47,12 @@ validator rejects raw numeric values, literal `null`, or JSON/camelCase field
 names in user-facing semantic strings. This keeps values in the deterministic
 metric display and prevents schema leakage into HTML/PNG.
 
+The `verdict` field is the Hero headline: it is hard-limited to 10–22 visible
+characters and must be one short conclusion sentence. Recommendation language,
+evidence-list formatting, paragraph-like explanation, and multiple sentence
+fragments are rejected before rendering; detailed reasoning belongs in the
+Today, evidence, load/recovery, and next-training sections.
+
 Only timeout/network, 429, 408 and transient 5xx responses receive at most one
 retry. `Retry-After` is honored up to eight seconds; otherwise a bounded
 exponential delay is used. 400, 401/403, malformed output, incomplete output,
