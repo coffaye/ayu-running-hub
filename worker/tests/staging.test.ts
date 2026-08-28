@@ -19,6 +19,7 @@ import {
 } from '../src/auth.ts';
 import app, { validateGenerateBody } from '../src/index.ts';
 import { renderGeneratePage } from '../src/pages.ts';
+import { GithubClient } from '../src/github.ts';
 
 test('run identity is string-only and lookup is based on master activity data', () => {
   assert.equal(normalizeRunId('00123'), '00123');
@@ -45,6 +46,47 @@ test('dispatch payload and return_run_details parser preserve request identity',
     { workflowRunId: 7, runUrl: 'https://ci/run/7', htmlUrl: 'https://github/run/7' }
   );
   assert.throws(() => parseDispatchResponse({ id: 7 }));
+});
+
+test('GitHub REST dispatch and status requests include the stable User-Agent', async () => {
+  const requests: Array<{ url: string; headers: Headers }> = [];
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    requests.push({ url, headers: new Headers(init?.headers) });
+    if (url.includes('/dispatches')) {
+      return new Response(
+        JSON.stringify({
+          workflow_run: {
+            id: 7,
+            run_url: 'https://ci/run/7',
+            html_url: 'https://github/run/7',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    return new Response(JSON.stringify({ status: 'completed', conclusion: 'success', html_url: 'https://github/run/7' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  const client = new GithubClient({
+    token: 'test-token',
+    repository: 'coffaye/ayu-running-hub',
+    workflow: 'generate-report.yml',
+    sourceRepository: 'coffaye/running_page',
+    fetcher,
+  });
+  await client.dispatch('123', 'request-1');
+  await client.getWorkflowRun(7);
+
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.equal(request.headers.get('user-agent'), 'ayu-running-hub-worker');
+    assert.equal(request.headers.get('authorization'), 'Bearer test-token');
+    assert.equal(request.headers.get('x-github-api-version'), '2022-11-28');
+  }
 });
 
 test('per-run lock deduplicates same run, permits different runs, and expires', () => {

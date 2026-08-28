@@ -19,6 +19,7 @@ const jsonHeaders = {
   accept: 'application/vnd.github+json',
   'content-type': 'application/json',
   'x-github-api-version': '2022-11-28',
+  'user-agent': 'ayu-running-hub-worker',
 };
 
 export class GithubClient {
