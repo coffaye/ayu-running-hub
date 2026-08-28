@@ -27,6 +27,7 @@ DEFAULT_REASONING_EFFORT = "high"
 DEFAULT_MAX_OUTPUT_TOKENS = 16384
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_RETRIES = 1
+MAX_SEMANTIC_RETRIES = 1
 ALLOWED_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
 ENV_FILE_NAMES = (".env.local", ".env")
 ENV_FILE_KEYS = frozenset(
@@ -316,6 +317,29 @@ def _extract_output_text(body: Mapping[str, Any]) -> str:
     return "".join(parts)
 
 
+def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
+    """Identify failures for which one corrective model response is useful."""
+
+    message = str(error)
+    return any(
+        marker in message
+        for marker in (
+            "requires a structured workout",
+            "unsupported heart-rate claim",
+            "unsupported stability claim",
+            "unsupported load claim",
+            "unsupported recovery claim",
+            "unsupported workout claim",
+            "lacks supporting physiological facts",
+            "verdict must contain",
+            "verdict must be a single line",
+            "verdict must not contain recommendation language",
+            "verdict must not use evidence-list formatting",
+            "verdict must remain",
+        )
+    )
+
+
 def _usage(body: Mapping[str, Any], key: str) -> int | None:
     usage = body.get("usage")
     if not isinstance(usage, Mapping):
@@ -426,6 +450,7 @@ class DeepSeekAnalyzer:
         payload = self._payload(context)
         started = self._clock()
         retry_count = 0
+        semantic_retry_count = 0
         while True:
             try:
                 try:
@@ -482,6 +507,19 @@ class DeepSeekAnalyzer:
                 try:
                     report = report_from_model_output(model_output, context)
                 except SchemaValidationError as exc:
+                    if (
+                        _is_semantic_validation_failure(exc)
+                        and semantic_retry_count < MAX_SEMANTIC_RETRIES
+                    ):
+                        semantic_retry_count += 1
+                        retry_count += 1
+                        payload["instructions"] = (
+                            str(payload["instructions"])
+                            + "\n上一次输出未通过本地 semantic grounding。请重新完整输出 JSON：只陈述输入中明确存在的事实；"
+                            "没有 structuredWorkout 时不要写训练完成、训练类型、有氧/无氧区间、配速稳定、负荷等级、恢复状态或生理代价；"
+                            "verdict 必须是 10–22 个可见字符的一句短结论。"
+                        )
+                        continue
                     raise DeepSeekError(
                         "DeepSeek output failed local validation",
                         category="validation",

@@ -154,6 +154,14 @@ class DeepSeekTests(unittest.TestCase):
         self.assertEqual(result.metadata.http_status, 200)
         self.assertEqual(result.metadata.response_status, "completed")
 
+    def test_semantic_failure_gets_one_corrective_retry(self):
+        first = {**valid_model_output(), "verdict": "建议今天继续训练并保持观察"}
+        transport = MockTransport([completed_response(first), completed_response()])
+        result = DeepSeekAnalyzer(self.config(), transport=transport).analyze_with_metadata(fit_context())
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(result.metadata.retry_count, 1)
+        self.assertIn("semantic grounding", transport.calls[1][2]["instructions"])
+
     def test_missing_key_is_explicit(self):
         analyzer = DeepSeekAnalyzer(self.config(api_key=None), transport=MockTransport([]))
         with self.assertRaises(MissingAPIKeyError):
