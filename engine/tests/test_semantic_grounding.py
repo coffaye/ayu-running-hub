@@ -105,6 +105,7 @@ class SemanticGroundingTests(unittest.TestCase):
             "pace uniformity": ("verdict", "配速均匀"),
             "pace stability": ("verdict", "节奏稳定"),
             "pace smoothness": ("verdict", "配速平稳"),
+            "rhythm smoothness": ("verdict", "节奏平稳"),
             "heart-rate stability": ("verdict", "心率平稳"),
             "absolute intensity": ("verdict", "整体强度适中"),
             "load level": ("load", "负荷中等"),
