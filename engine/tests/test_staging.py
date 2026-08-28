@@ -195,14 +195,65 @@ class StagingBuildTests(unittest.TestCase):
             self.assertEqual(timeout, 30)
             return FakeResponse()
 
-        self.assertEqual(pages.dispatch_pages_workflow("test-token", opener=opener), 987)
+        self.assertEqual(pages.dispatch_pages_workflow("test-token", dispatch_id="probe-123", opener=opener), 987)
         self.assertEqual(len(requests), 1)
         self.assertIn("return_run_details=true", requests[0].full_url)
         self.assertEqual(requests[0].headers["User-agent"], pages.USER_AGENT)
         self.assertEqual(requests[0].headers["Authorization"], "Bearer test-token")
         payload = json.loads(requests[0].data.decode("utf-8"))
         self.assertEqual(payload["ref"], "master")
-        self.assertEqual(payload["inputs"], {"save_data_in_github_cache": False, "data_cache_prefix": "track_data"})
+        self.assertEqual(
+            payload["inputs"],
+            {
+                "save_data_in_github_cache": False,
+                "data_cache_prefix": "track_data",
+                "report_dispatch_id": "probe-123",
+            },
+        )
+
+    def test_pages_dispatch_associates_204_with_exact_run_name(self) -> None:
+        requests: list[Request] = []
+        responses = [
+            b"",
+            json.dumps(
+                {"workflow_runs": [{"id": 654, "name": "Publish GitHub Pages · probe-204"}]},
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        ]
+
+        class FakeResponse:
+            status = 204
+
+            def __init__(self, body: bytes) -> None:
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self) -> bytes:
+                return self.body
+
+        def opener(request: Request, timeout: int = 30) -> FakeResponse:
+            requests.append(request)
+            self.assertEqual(timeout, 30)
+            return FakeResponse(responses.pop(0))
+
+        self.assertEqual(
+            pages.dispatch_pages_workflow(
+                "test-token",
+                dispatch_id="probe-204",
+                association_poll_seconds=0,
+                sleep=lambda _seconds: None,
+                opener=opener,
+            ),
+            654,
+        )
+        self.assertEqual(len(requests), 2)
+        self.assertIn("/dispatches", requests[0].full_url)
+        self.assertIn("/runs?event=workflow_dispatch&branch=master", requests[1].full_url)
 
     def test_live_report_verification_matches_manifest_and_html(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

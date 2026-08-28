@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any, Callable, Mapping
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -72,6 +73,10 @@ def dispatch_pages_workflow(
     repository: str = "coffaye/running_page",
     workflow: str = "gh-pages.yml",
     ref: str = "master",
+    dispatch_id: str | None = None,
+    association_timeout_seconds: int = 60,
+    association_poll_seconds: int = 5,
+    sleep: Callable[[float], None] = time.sleep,
     opener: Callable[..., Any] = urlopen,
 ) -> int:
     if ref != "master":
@@ -80,18 +85,51 @@ def dispatch_pages_workflow(
         f"{GITHUB_API}/repos/{repository}/actions/workflows/{workflow}/dispatches"
         "?return_run_details=true"
     )
+    correlation_id = dispatch_id or f"ayu-pages-{uuid.uuid4().hex}"
     response = _json_request(
         "POST",
         endpoint,
         token,
-        {"ref": ref, "inputs": {"save_data_in_github_cache": False, "data_cache_prefix": "track_data"}},
+        {
+            "ref": ref,
+            "inputs": {
+                "save_data_in_github_cache": False,
+                "data_cache_prefix": "track_data",
+                "report_dispatch_id": correlation_id,
+            },
+        },
         opener,
     )
     nested = response.get("workflow_run")
     workflow_run_id = nested.get("id") if isinstance(nested, Mapping) else response.get("workflow_run_id")
-    if not isinstance(workflow_run_id, int) or workflow_run_id <= 0:
-        raise GithubApiError("Pages workflow dispatch returned no workflow run ID")
-    return workflow_run_id
+    if isinstance(workflow_run_id, int) and workflow_run_id > 0:
+        return workflow_run_id
+
+    expected_name = f"Publish GitHub Pages · {correlation_id}"
+    deadline = time.monotonic() + association_timeout_seconds
+    runs_endpoint = (
+        f"{GITHUB_API}/repos/{repository}/actions/workflows/{workflow}/runs"
+        "?event=workflow_dispatch&branch=master&per_page=100"
+    )
+    while True:
+        runs = _json_request("GET", runs_endpoint, token, opener=opener)
+        candidates = runs.get("workflow_runs")
+        if isinstance(candidates, list):
+            matches = [
+                run
+                for run in candidates
+                if isinstance(run, Mapping)
+                and (run.get("name") == expected_name or run.get("display_title") == expected_name)
+                and isinstance(run.get("id"), int)
+                and run.get("id", 0) > 0
+            ]
+            if len(matches) == 1:
+                return int(matches[0]["id"])
+            if len(matches) > 1:
+                raise GithubApiError("Pages workflow dispatch matched multiple workflow runs")
+        if time.monotonic() >= deadline:
+            raise GithubApiError("Pages workflow dispatch returned no workflow run ID")
+        sleep(association_poll_seconds)
 
 
 def wait_for_pages(
