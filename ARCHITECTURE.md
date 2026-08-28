@@ -20,6 +20,12 @@ The future GitHub Actions/Cloudflare caller belongs outside this repository.
 Likewise, the Codex plugin and the static `running_page` report viewer are
 consumers, not dependencies of the Hub.
 
+For Phase 4 staging, the caller is intentionally included as a separate
+boundary under `.github/workflows/` and `worker/`: the workflow owns the
+report-build transaction and staging-branch push, while the Worker owns
+Access validation, run lookup, idempotency and status normalization. Neither
+boundary is a production deployment or writes `running_page/master`.
+
 ## Data and privacy rules
 
 Adapters may accept production files at runtime, but fixtures in this repo are
@@ -34,4 +40,3 @@ The four public identity values live in `engine/ayu_report_engine/version.py`.
 Schema changes require updating both JSON schemas and tests. A caller pins a
 Hub commit and injects `AYU_ENGINE_COMMIT`; generated reports then carry the
 actual Hub provenance instead of a mutable branch name.
-

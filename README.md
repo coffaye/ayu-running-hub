@@ -58,3 +58,18 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for boundaries,
 [docs/RUNNING_PAGE_INTEGRATION.md](docs/RUNNING_PAGE_INTEGRATION.md) for the
 future integration contract, and [docs/MIGRATION.md](docs/MIGRATION.md) for
 the repository split record.
+
+## Phase 4 staging boundary
+
+`.github/workflows/generate-report.yml` accepts only string `run_id` and a
+Worker-generated `request_id`. It reads activity data from
+`coffaye/running_page@master`, analyzes with the configured DeepSeek variables,
+and writes only `coffaye/running_page@ayu-report-e2e` report files. The
+workflow uses per-run concurrency and an atomic HTML/manifest transaction.
+
+`worker/` is the separately deployable `ayu-running-hub-staging` Cloudflare
+Worker. It is Access-protected, validates the Access JWT itself, performs a
+master run lookup, and uses a SQLite-backed Durable Object lock before
+dispatching the workflow. Configure `HUB_ACTIONS_TOKEN` as a Cloudflare Secret;
+configure `DEEPSEEK_API_KEY` and `RUNNING_PAGE_WRITE_TOKEN` as GitHub Actions
+Secrets. No production Pages or `running_page/master` write is part of staging.

@@ -1,0 +1,6 @@
+# Copy to .dev.vars locally. Never commit the copied file.
+HUB_ACTIONS_TOKEN=
+ACCESS_ISSUER=
+ACCESS_AUDIENCE=
+ACCESS_JWKS_URL=
+

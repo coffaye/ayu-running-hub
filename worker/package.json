@@ -1,0 +1,16 @@
+{
+  "name": "ayu-running-hub-staging-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy:staging": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "typescript": "^5.2.2",
+    "wrangler": "^4.0.0"
+  }
+}

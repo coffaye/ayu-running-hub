@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ayu-running-hub-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "HUB_REPOSITORY": "coffaye/ayu-running-hub",
+    "HUB_WORKFLOW": "generate-report.yml",
+    "RUNNING_PAGE_REPOSITORY": "coffaye/running_page",
+    "ACCESS_ISSUER": "",
+    "ACCESS_AUDIENCE": "",
+    "ACCESS_JWKS_URL": ""
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "REPORT_GENERATION_LOCK", "class_name": "RunGenerationLock" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RunGenerationLock"] }
+  ]
+}
+
