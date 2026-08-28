@@ -42,6 +42,7 @@ class StagingBuildTests(unittest.TestCase):
         entry = manifest_entry(self.report, self.config, "2030-03-05T00:00:00Z")
         self.assertEqual(entry["runId"], "1900000000000")
         self.assertEqual(entry["localDate"], self.context.local_date)
+        self.assertEqual(entry["hubVersion"], "0.2.0")
         self.assertEqual(entry["engineCommit"], "hub-test-commit")
         self.assertEqual(entry["reasoningEffort"], "low")
 
@@ -101,4 +102,3 @@ class StagingBuildTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

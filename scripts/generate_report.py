@@ -78,6 +78,7 @@ def manifest_entry(report: StructuredReport, config: DeepSeekConfig, generated_a
         "localDate": local_date,
         "url": f"reports/daily/{local_date}/{run_id}.html",
         "generatedAt": generated_at,
+        "hubVersion": data.get("engineVersion", ENGINE_VERSION),
         "engineVersion": data.get("engineVersion", ENGINE_VERSION),
         "engineCommit": data.get("engineCommit"),
         "promptVersion": data.get("promptVersion", PROMPT_VERSION),
@@ -210,4 +211,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
