@@ -53,9 +53,15 @@ export class GithubClient {
       `/repos/${this.config.repository}/actions/workflows/${this.config.workflow}/dispatches?return_run_details=true`,
       { method: 'POST', body: JSON.stringify(buildDispatchPayload(normalized, requestId)) }
     );
-    if (!response.ok) throw new Error(`GitHub dispatch failed: ${response.status}`);
+    if (!response.ok) {
+      console.error('GitHub workflow dispatch failed', { status: response.status });
+      throw new Error(`GitHub dispatch failed: ${response.status}`);
+    }
     const text = await response.text();
-    if (!text.trim()) throw new Error('GitHub dispatch returned no workflow details');
+    if (!text.trim()) {
+      console.error('GitHub workflow dispatch returned no run details');
+      throw new Error('GitHub dispatch returned no workflow details');
+    }
     return parseDispatchResponse(JSON.parse(text));
   }
 
