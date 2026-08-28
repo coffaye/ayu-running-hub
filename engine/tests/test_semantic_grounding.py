@@ -104,6 +104,8 @@ class SemanticGroundingTests(unittest.TestCase):
             "heart-rate zone": ("verdict", "心率处于有氧区间"),
             "pace uniformity": ("verdict", "配速均匀"),
             "pace stability": ("verdict", "节奏稳定"),
+            "pace smoothness": ("verdict", "配速平稳"),
+            "heart-rate stability": ("verdict", "心率平稳"),
             "absolute intensity": ("verdict", "整体强度适中"),
             "load level": ("load", "负荷中等"),
             "completion score": ("score", 7),
