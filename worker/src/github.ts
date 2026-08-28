@@ -13,6 +13,7 @@ export interface GithubClientConfig {
   sourceRepository: string;
   fetcher?: typeof fetch;
   apiBaseUrl?: string;
+  pagesOrigin?: string;
 }
 
 const jsonHeaders = {
@@ -85,5 +86,20 @@ export class GithubClient {
     );
     if (!response.ok) throw new Error(`running_page lookup failed: ${response.status}`);
     return runExistsInActivities(await response.json(), normalized);
+  }
+
+  async getLiveReportUrl(runId: string): Promise<string | null> {
+    const normalized = normalizeRunId(runId);
+    const origin = (this.config.pagesOrigin ?? 'https://coffaye.github.io/running_page').replace(/\/$/, '');
+    const response = await this.fetcher(`${origin}/reports/manifest.json?ayu_run_id=${encodeURIComponent(normalized)}`, {
+      headers: { accept: 'application/json', 'cache-control': 'no-store', 'user-agent': 'ayu-running-hub-worker' },
+    });
+    if (!response.ok) return null;
+    const value = (await response.json()) as { reports?: Record<string, unknown> };
+    const entry = value.reports?.[normalized];
+    if (!entry || typeof entry !== 'object') return null;
+    const url = (entry as Record<string, unknown>).url;
+    if (typeof url !== 'string' || !/^reports\/daily\/\d{4}-\d{2}-\d{2}\/\d+\.html$/.test(url)) return null;
+    return `${origin}/${url}`;
   }
 }

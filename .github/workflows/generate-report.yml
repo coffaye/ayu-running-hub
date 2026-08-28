@@ -23,11 +23,12 @@ permissions:
 
 jobs:
   generate:
-    name: Generate and publish staging report
+    name: Generate, publish, and deploy Ayu report
     runs-on: ubuntu-latest
     env:
       AYU_ENGINE_COMMIT: ${{ github.sha }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      RUNNING_PAGE_BRANCH: master
       DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-v4-flash' }}
       DEEPSEEK_REASONING_EFFORT: ${{ vars.DEEPSEEK_REASONING_EFFORT || 'low' }}
       DEEPSEEK_MAX_OUTPUT_TOKENS: ${{ vars.DEEPSEEK_MAX_OUTPUT_TOKENS || '16384' }}
@@ -47,11 +48,11 @@ jobs:
           path: running-page-source
           persist-credentials: false
 
-      - name: Checkout running_page staging as the output target
+      - name: Checkout running_page master as the output target
         uses: actions/checkout@v4
         with:
           repository: coffaye/running_page
-          ref: ayu-report-e2e
+          ref: master
           path: running-page-output
           token: ${{ secrets.RUNNING_PAGE_WRITE_TOKEN }}
           persist-credentials: true
@@ -80,9 +81,26 @@ jobs:
           RUN_ID: ${{ inputs.run_id }}
           REQUEST_ID: ${{ inputs.request_id }}
         run: |
-          python "$GITHUB_WORKSPACE/scripts/publish_report.py" \
+          publication_json="$(python "$GITHUB_WORKSPACE/scripts/publish_report.py" \
             --target-root "$GITHUB_WORKSPACE/running-page-output" \
             --run-id "$RUN_ID" \
             --request-id "$REQUEST_ID" \
             --artifact-root "$RUNNER_TEMP/ayu-report-publish" \
-            --max-attempts 5
+            --target-branch "$RUNNING_PAGE_BRANCH" \
+            --max-attempts 5)"
+          echo "$publication_json"
+          report_path="$(python -c 'import json,sys; print(json.load(sys.stdin)["reportPath"])' <<< "$publication_json")"
+          echo "REPORT_PATH=$report_path" >> "$GITHUB_ENV"
+
+      - name: Dispatch and verify production Pages
+        env:
+          RUN_ID: ${{ inputs.run_id }}
+          RUNNING_PAGE_WRITE_TOKEN: ${{ secrets.RUNNING_PAGE_WRITE_TOKEN }}
+        run: |
+          python "$GITHUB_WORKSPACE/scripts/deploy_pages.py" \
+            --run-id "$RUN_ID" \
+            --engine-commit "$AYU_ENGINE_COMMIT" \
+            --local-report "$GITHUB_WORKSPACE/running-page-output/$REPORT_PATH" \
+            --repository "coffaye/running_page" \
+            --workflow "gh-pages.yml" \
+            --max-wait-seconds 900

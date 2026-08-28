@@ -1,4 +1,4 @@
-"""Publish one generated report to the staging branch without lost updates."""
+"""Publish one generated report to a trusted running_page branch without lost updates."""
 
 from __future__ import annotations
 
@@ -24,6 +24,13 @@ def normalize_run_id(value: str) -> str:
     if not candidate or any(character not in _RUN_ID for character in candidate) or int(candidate) <= 0:
         raise ValueError("run_id must contain positive decimal digits only")
     return candidate
+
+
+def normalize_target_branch(value: str) -> str:
+    branch = str(value).strip()
+    if branch not in {"master", "ayu-report-e2e"}:
+        raise ValueError("target branch is not allowed")
+    return branch
 
 
 def _now() -> str:
@@ -131,13 +138,15 @@ def publish_report(
     run_id: str,
     request_id: str | None = None,
     artifact_root: Path,
+    target_branch: str = "ayu-report-e2e",
     max_attempts: int = 5,
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[], float] = lambda: random.uniform(0.05, 0.25),
 ) -> dict[str, Any]:
-    """Publish a generated report, rebasing on the latest staging branch per attempt."""
+    """Publish a generated report, rebasing on the latest trusted branch per attempt."""
 
     normalized = normalize_run_id(run_id)
+    branch = normalize_target_branch(target_branch)
     if max_attempts < 1:
         raise ValueError("max_attempts must be positive")
     manifest_path = target_root / "public" / "reports" / "manifest.json"
@@ -163,8 +172,8 @@ def publish_report(
     last_error: GitCommandError | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            run_git(target_root, ["fetch", "origin", "ayu-report-e2e"])
-            run_git(target_root, ["reset", "--hard", "origin/ayu-report-e2e"])
+            run_git(target_root, ["fetch", "origin", branch])
+            run_git(target_root, ["reset", "--hard", f"origin/{branch}"])
             destination = target_root / report_rel
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(artifact_report, destination)
@@ -182,8 +191,9 @@ def publish_report(
                 raise ValueError("publication staged a path outside the allowlist")
             if staged:
                 suffix = f" ({request_id})" if request_id else ""
-                run_git(target_root, ["commit", "-m", f"生成 Ayu staging 日报 {normalized}{suffix}"])
-                run_git(target_root, ["push", "origin", "HEAD:ayu-report-e2e"])
+                label = "staging" if branch == "ayu-report-e2e" else "production"
+                run_git(target_root, ["commit", "-m", f"生成 Ayu {label} 日报 {normalized}{suffix}"])
+                run_git(target_root, ["push", "origin", f"HEAD:{branch}"])
             commit = run_git(target_root, ["rev-parse", "HEAD"]).strip()
             return {
                 "runId": normalized,
@@ -198,15 +208,16 @@ def publish_report(
                 break
             sleep(jitter())
     operation = last_error.operation if last_error else "publication"
-    raise RuntimeError(f"staging publication failed after {max_attempts} attempts ({operation})")
+    raise RuntimeError(f"{branch} publication failed after {max_attempts} attempts ({operation})")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Publish one Ayu report to the staging branch")
+    parser = argparse.ArgumentParser(description="Publish one Ayu report to a trusted running_page branch")
     parser.add_argument("--target-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--request-id")
     parser.add_argument("--artifact-root", type=Path, required=True)
+    parser.add_argument("--target-branch", default="ayu-report-e2e")
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args(argv)
     try:
@@ -215,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             request_id=args.request_id,
             artifact_root=args.artifact_root,
+            target_branch=args.target_branch,
             max_attempts=args.max_attempts,
         )
     except Exception as exc:

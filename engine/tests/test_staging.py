@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.request import Request
 
 ENGINE_ROOT = Path(__file__).parents[1]
 HUB_ROOT = ENGINE_ROOT.parent
@@ -20,6 +21,7 @@ from ayu_report_engine.analysis import FixtureAnalyzer
 from ayu_report_engine.deepseek import DeepSeekConfig
 from generate_report import manifest_entry, replace_report_and_manifest
 import publish_report as publication
+import deploy_pages as pages
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -172,6 +174,73 @@ class StagingBuildTests(unittest.TestCase):
                 )
             self.assertEqual(result["publishAttempt"], 2)
             self.assertEqual(set(remote_manifest["reports"]), {"A", "B", "123"})
+
+    def test_pages_dispatch_uses_master_contract_and_user_agent(self) -> None:
+        requests: list[Request] = []
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"workflow_run":{"id":987}}'
+
+        def opener(request: Request, timeout: int = 30) -> FakeResponse:
+            requests.append(request)
+            self.assertEqual(timeout, 30)
+            return FakeResponse()
+
+        self.assertEqual(pages.dispatch_pages_workflow("test-token", opener=opener), 987)
+        self.assertEqual(len(requests), 1)
+        self.assertIn("return_run_details=true", requests[0].full_url)
+        self.assertEqual(requests[0].headers["User-agent"], pages.USER_AGENT)
+        self.assertEqual(requests[0].headers["Authorization"], "Bearer test-token")
+        payload = json.loads(requests[0].data.decode("utf-8"))
+        self.assertEqual(payload["ref"], "master")
+        self.assertEqual(payload["inputs"], {"save_data_in_github_cache": False, "data_cache_prefix": "track_data"})
+
+    def test_live_report_verification_matches_manifest_and_html(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            local_report = Path(directory) / "123.html"
+            local_report.write_bytes(b"production html")
+            responses = [
+                b'{"schemaVersion":1,"reports":{"123":{"runId":"123","generatedAt":"2030-03-05T00:00:00Z","engineCommit":"hub-sha","url":"reports/daily/2030-03-05/123.html"}}}',
+                b"production html",
+            ]
+
+            class FakeResponse:
+                status = 200
+
+                def __init__(self, body: bytes) -> None:
+                    self.body = body
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *_args):
+                    return False
+
+                def read(self) -> bytes:
+                    return self.body
+
+            def opener(_request: Request, timeout: int = 30) -> FakeResponse:
+                self.assertEqual(timeout, 30)
+                return FakeResponse(responses.pop(0))
+
+            result = pages.verify_live_report(
+                "123",
+                expected_engine_commit="hub-sha",
+                local_report=local_report,
+                attempts=1,
+                opener=opener,
+            )
+            self.assertEqual(result["engineCommit"], "hub-sha")
+            self.assertTrue(result["reportUrl"].endswith("/reports/daily/2030-03-05/123.html"))
 
 
 if __name__ == "__main__":

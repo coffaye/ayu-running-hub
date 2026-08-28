@@ -24,6 +24,7 @@ export interface GithubClientLike {
     conclusion: string | null;
     htmlUrl: string | null;
   }>;
+  getLiveReportUrl?: (runId: string) => Promise<string | null>;
 }
 
 export interface WorkerDependencies {
@@ -47,6 +48,7 @@ const clientFor = (env: Env) =>
     repository: env.HUB_REPOSITORY ?? 'coffaye/ayu-running-hub',
     workflow: env.HUB_WORKFLOW ?? 'generate-report.yml',
     sourceRepository: env.RUNNING_PAGE_REPOSITORY ?? 'coffaye/running_page',
+    pagesOrigin: 'https://coffaye.github.io/running_page',
   });
 
 const delay = (milliseconds: number): Promise<void> =>
@@ -141,7 +143,15 @@ const status = async (runId: string, env: Env, dependencies: Required<WorkerDepe
   const value = (await response.json()) as { record: LockRecord | null };
   if (!value.record) return jsonResponse({ error: 'generation not found' }, 404);
   if (!value.record.workflowRunId || value.record.state === 'failure' || value.record.state === 'success') {
-    return jsonResponse(statusFromLock(value.record));
+    const result = statusFromLock(value.record);
+    if (result.state === 'success') {
+      try {
+        result.reportUrl = await dependencies.createGithubClient(env).getLiveReportUrl?.(runId) ?? null;
+      } catch {
+        result.reportUrl = null;
+      }
+    }
+    return jsonResponse(result);
   }
   try {
     const provider = await dependencies.createGithubClient(env).getWorkflowRun(value.record.workflowRunId);
@@ -150,6 +160,13 @@ const status = async (runId: string, env: Env, dependencies: Required<WorkerDepe
       await stub.fetch(lockRequest('/release', runId, { method: 'POST', body: JSON.stringify({ state: normalized.state, workflowUrl: normalized.runUrl }) }));
     } else if (normalized.state === 'running') {
       await stub.fetch(lockRequest('/workflow', runId, { method: 'POST', body: JSON.stringify({ state: 'running', workflowUrl: normalized.runUrl }) }));
+    }
+    if (normalized.state === 'success') {
+      try {
+        normalized.reportUrl = await dependencies.createGithubClient(env).getLiveReportUrl?.(runId) ?? null;
+      } catch {
+        normalized.reportUrl = null;
+      }
     }
     return jsonResponse(normalized);
   } catch {

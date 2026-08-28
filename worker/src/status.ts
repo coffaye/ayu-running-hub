@@ -6,6 +6,7 @@ export interface StatusResponse {
   workflowRunId: number | null;
   requestId: string;
   runUrl?: string | null;
+  reportUrl?: string | null;
 }
 
 export const statusFromLock = (record: LockRecord): StatusResponse => ({
@@ -21,6 +22,7 @@ export const statusFromLock = (record: LockRecord): StatusResponse => ({
   workflowRunId: record.workflowRunId,
   requestId: record.requestId,
   runUrl: record.workflowUrl ?? null,
+  reportUrl: null,
 });
 
 export const statusFromGithub = (
@@ -32,5 +34,5 @@ export const statusFromGithub = (
   workflowRunId: record.workflowRunId,
   requestId: record.requestId,
   runUrl: provider.htmlUrl ?? record.workflowUrl ?? null,
+  reportUrl: null,
 });
-

@@ -90,6 +90,27 @@ test('GitHub REST dispatch and status requests include the stable User-Agent', a
   }
 });
 
+test('live report lookup returns only the allowlisted production report URL', async () => {
+  const client = new GithubClient({
+    token: 'test-token',
+    repository: 'coffaye/ayu-running-hub',
+    workflow: 'generate-report.yml',
+    sourceRepository: 'coffaye/running_page',
+    fetcher: (async () => new Response(JSON.stringify({
+      reports: {
+        '123': {
+          runId: '123',
+          url: 'reports/daily/2026-08-28/123.html',
+        },
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch,
+  });
+  assert.equal(
+    await client.getLiveReportUrl('123'),
+    'https://coffaye.github.io/running_page/reports/daily/2026-08-28/123.html',
+  );
+});
+
 test('per-run lock deduplicates same run, permits different runs, and expires', () => {
   const first = acquireLock(null, '123', 'a', 1000);
   const duplicate = acquireLock(first.record, '123', 'b', 2000);
@@ -247,27 +268,29 @@ test('all generation and status paths require Basic Auth, while a valid user rea
   assert.doesNotMatch(html, /test-password/);
 });
 
-test('staging workflow is pinned to master input data and report-only output', () => {
+test('production workflow is pinned to master input and output with Pages verification', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/generate-report.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /run_id:\s*\n\s+description:/);
   assert.match(workflow, /request_id:\s*\n\s+description:/);
   assert.match(workflow, /group: ayu-report-\$\{\{ inputs\.run_id \}\}/);
   assert.match(workflow, /ref: master/);
-  assert.match(workflow, /ref: ayu-report-e2e/);
   assert.match(workflow, /scripts\/publish_report\.py/);
   assert.match(workflow, /ayu-report-publish/);
+  assert.match(workflow, /--target-branch "\$RUNNING_PAGE_BRANCH"/);
   assert.match(workflow, /--max-attempts 5/);
-  assert.doesNotMatch(workflow, /ref: master[\s\S]*git push origin HEAD:master/);
-  assert.doesNotMatch(workflow, /git push origin HEAD:ayu-report-e2e/);
+  assert.match(workflow, /scripts\/deploy_pages\.py/);
+  assert.match(workflow, /gh-pages\.yml/);
+  assert.match(workflow, /RUNNING_PAGE_BRANCH: master/);
 });
 
-test('generate page has no GET side effect and reports staging completion text', async () => {
+test('generate page has no GET side effect and reports production completion text', async () => {
   const response = renderGeneratePage('123');
   const html = await response.text();
   assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
   assert.match(html, /POST/);
   assert.match(html, /正在提交/);
-  assert.match(html, /日报已生成 · 测试分支写入成功/);
+  assert.match(html, /日报已生成/);
+  assert.doesNotMatch(html, /测试分支写入成功/);
   assert.match(html, /run_id/);
 });
