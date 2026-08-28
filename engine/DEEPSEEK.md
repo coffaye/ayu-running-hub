@@ -41,7 +41,7 @@ complete `StructuredReport`; runtime identity and version fields are injected
 by the Engine. The output is then checked for JSON shape, local semantic
 meaning, and whitelisted `metricRef` availability before rendering.
 
-The live benchmark uses prompt version `ayu-daily-v5`: each request includes
+The live benchmark uses prompt version `ayu-daily-v6`: each request includes
 the metric references actually available in that context, and the local
 validator rejects raw numeric values, literal `null`, or JSON/camelCase field
 names in user-facing semantic strings. This keeps values in the deterministic

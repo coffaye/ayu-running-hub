@@ -42,6 +42,238 @@ _NARRATIVE_FORBIDDEN = (
     "ascentM",
 )
 
+_UNKNOWN_TEXT = frozenset(
+    {
+        "",
+        "unknown",
+        "未知",
+        "不可用",
+        "未提供",
+        "不明",
+        "暂无",
+        "无法判断",
+        "无法确认",
+    }
+)
+_NEGATION = re.compile(
+    r"(?:无法|不能|不可|缺少|没有|未提供|未知|不具备|不足|未能|尚无|不支持|不确定)"
+    r"(?:据此|直接|可靠地|充分地|做出|判断|证明|确认|推断|说明|评估)?"
+)
+_HR_CLAIMS = (
+    r"(?:有氧|无氧)区间",
+    r"\bzone\s*[1-5]\b",
+    r"(?:心率|HR)[^。；;,\n]{0,12}(?:处于|在|属于|进入|落在)[^。；;,\n]{0,8}(?:有氧|无氧|训练区|zone)",
+    r"(?:整体|本次|训练)?强度(?:偏低|偏高|适中|中等|较低|较高)",
+)
+_PACE_STABILITY_CLAIMS = (
+    r"配速(?:均匀|稳定|波动|漂移)",
+    r"节奏稳定",
+    r"后程保持",
+    r"前后半程一致",
+    r"心率漂移",
+    r"配速稳定性",
+)
+_LOAD_CLAIMS = (
+    r"负荷(?:中等|适中|较高|较低|偏高|偏低|高|低)",
+    r"(?:训练)?负荷(?:水平|判断)",
+    r"刺激充分",
+    r"正向积累",
+    r"负荷可控",
+)
+_RECOVERY_CLAIMS = (
+    r"恢复状态",
+    r"恢复时间",
+    r"完全恢复",
+    r"恢复(?:良好|充足|正常|不足|较好|较差)",
+    r"预计恢复",
+    r"已恢复",
+)
+_WORKOUT_CLAIMS = (
+    r"(?:有氧|无氧|轻松|恢复|节奏|稳态|阈值|间歇|长距离|比赛)(?:跑|训练|课表)",
+    r"\b(?:tempo|interval|easy|free\s+run|threshold)\b",
+    r"(?:训练计划|结构化课表|课表).{0,4}(?:完成|达成|执行)",
+)
+_PHYSIOLOGY_CLAIMS = (
+    r"生理代价(?:较低|较高|中等|明显|偏高|偏低)",
+    r"代价(?:较低|较高|中等|明显|偏高|偏低)",
+)
+
+
+def _is_unknown_text(value: object) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return normalized in _UNKNOWN_TEXT or bool(
+        re.search(r"(?:未知|不可用|无法|不能|缺少|没有|未提供|不足|尚无|不确定)", normalized)
+    )
+
+
+def _match_is_negated(text: str, start: int) -> bool:
+    # Evaluate only the current clause so a preceding conservative statement
+    # such as “无法据此判断配速稳定性” is not treated as a positive claim.
+    clause = re.split(r"[。；;,，\n]", text[:start])[-1]
+    return bool(_NEGATION.search(clause))
+
+
+def _find_unsupported_claim(text: object, patterns: tuple[str, ...]) -> str | None:
+    if not isinstance(text, str):
+        return None
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match and not _match_is_negated(text, match.start()):
+            clause_end_candidates = [
+                position
+                for delimiter in "。；;,，\n"
+                if (position := text.find(delimiter, match.end())) >= 0
+            ]
+            clause_end = min(clause_end_candidates, default=len(text))
+            suffix = text[match.end() : clause_end]
+            if re.match(
+                r"\s*(?:为|是|仅为)?\s*(?:未知|不可用|未提供|不明|无法判断|无法确认|不能判断|不能确认)",
+                suffix,
+                flags=re.IGNORECASE,
+            ):
+                continue
+            return match.group(0)
+    return None
+
+
+def _report_narratives(report: "StructuredReport") -> tuple[tuple[str, str | None], ...]:
+    values: list[tuple[str, str | None]] = [
+        ("verdict", report.verdict),
+        ("trainingPurpose", report.training_purpose),
+        ("completion.status", report.completion.get("status")),
+        ("completion.trainingType", report.completion.get("trainingType")),
+        ("physiologyCost", report.physiology_cost),
+        ("bottleneck", report.bottleneck),
+        ("applicableDomain", report.applicable_domain),
+        ("marginalGain", report.marginal_gain),
+        ("minimalReversibleNextStep", report.minimal_reversible_next_step),
+        ("nextTrainingSuggestion", report.next_training_suggestion),
+    ]
+    values.extend(
+        (f"evidence[{index}].interpretation", item.get("interpretation"))
+        for index, item in enumerate(report.evidence)
+    )
+    if report.load is not None:
+        values.append(("load.assessment", report.load.get("assessment")))
+    if report.recovery is not None:
+        values.append(("recovery.assessment", report.recovery.get("assessment")))
+    values.extend(
+        (f"shadowRunner.{name}", value) for name, value in report.shadowrunner.items()
+    )
+    # Uncertainty is explicitly allowed to name unsupported claims as unknown;
+    # it is the place where the report records those boundaries.
+    return tuple(values)
+
+
+def _context_has_collection(context: DailyRunContext, *names: str) -> bool:
+    return any(bool(getattr(context, name, None)) for name in names)
+
+
+def _context_has_reliable_hr_anchor(context: DailyRunContext) -> bool:
+    # A raw average HR is not an individual zone. A supplied max/threshold or
+    # explicit zone collection is the minimum anchor for zone-level language.
+    return _context_has_collection(
+        context,
+        "hr_zones",
+        "heart_rate_zones",
+        "threshold_hr_bpm",
+        "hr_threshold_bpm",
+        "max_hr_bpm",
+    )
+
+
+def _context_has_formal_load(context: DailyRunContext) -> bool:
+    if any(
+        getattr(context, name, None) is not None
+        for name in (
+            "training_load_peak",
+            "training_effect_aerobic",
+            "training_effect_anaerobic",
+        )
+    ):
+        return True
+    return _context_has_collection(context, "load_metrics", "training_load_metrics")
+
+
+def _context_has_recovery(context: DailyRunContext) -> bool:
+    return any(
+        getattr(context, name, None) is not None
+        for name in ("recovery_percent", "recovery_hours")
+    )
+
+
+def validate_semantic_grounding(report: "StructuredReport", context: DailyRunContext) -> None:
+    """Reject conclusions that cannot be supported by the current context.
+
+    Metric-reference validation proves that a referenced value exists. This
+    second gate checks whether the surrounding natural language asks the
+    value to prove more than the source can establish.
+    """
+
+    if context.structured_workout is None:
+        completion_score = report.completion.get("score")
+        if completion_score is not None:
+            raise SchemaValidationError(
+                "completion.score requires a structured workout"
+            )
+        for field in ("training_purpose",):
+            if not _is_unknown_text(getattr(report, field)):
+                raise SchemaValidationError(f"{field} requires a structured workout")
+        for field in ("status", "trainingType"):
+            if not _is_unknown_text(report.completion.get(field)):
+                raise SchemaValidationError(f"completion.{field} requires a structured workout")
+
+    narratives = _report_narratives(report)
+    if not _context_has_reliable_hr_anchor(context):
+        for field, text in narratives:
+            if _find_unsupported_claim(text, _HR_CLAIMS):
+                raise SchemaValidationError(f"{field} makes an unsupported heart-rate claim")
+
+    if not _context_has_collection(
+        context,
+        "laps",
+        "splits",
+        "pace_series",
+        "pace_distribution",
+        "segments",
+    ):
+        for field, text in narratives:
+            if _find_unsupported_claim(text, _PACE_STABILITY_CLAIMS):
+                raise SchemaValidationError(f"{field} makes an unsupported stability claim")
+
+    if not _context_has_formal_load(context):
+        if report.load is not None and not _is_unknown_text(report.load.get("assessment")):
+            raise SchemaValidationError("load.assessment requires a formal load metric")
+        for field, text in narratives:
+            if _find_unsupported_claim(text, _LOAD_CLAIMS):
+                raise SchemaValidationError(f"{field} makes an unsupported load claim")
+
+    if not _context_has_recovery(context):
+        if report.recovery is not None and not _is_unknown_text(report.recovery.get("assessment")):
+            raise SchemaValidationError("recovery.assessment requires recovery facts")
+        for field, text in narratives:
+            if _find_unsupported_claim(text, _RECOVERY_CLAIMS):
+                raise SchemaValidationError(f"{field} makes an unsupported recovery claim")
+
+    if context.structured_workout is None:
+        for field, text in narratives:
+            if _find_unsupported_claim(text, _WORKOUT_CLAIMS):
+                raise SchemaValidationError(f"{field} makes an unsupported workout claim")
+
+    if (
+        report.physiology_cost is not None
+        and not _context_has_reliable_hr_anchor(context)
+        and not _context_has_formal_load(context)
+        and not _context_has_recovery(context)
+        and not _is_unknown_text(report.physiology_cost)
+    ):
+        if _find_unsupported_claim(report.physiology_cost, _PHYSIOLOGY_CLAIMS) or report.physiology_cost:
+            raise SchemaValidationError("physiologyCost lacks supporting physiological facts")
+
 
 def _check_text(value: object, field: str, *, nullable: bool = False) -> None:
     if value is None and nullable:
@@ -316,5 +548,6 @@ def report_from_model_output(value: Mapping[str, Any], context: DailyRunContext)
         uncertainty=tuple(value["uncertainty"]),
     )
     validate_metric_refs(report, context)
+    validate_semantic_grounding(report, context)
     validate_structured_report(report.to_dict())
     return report

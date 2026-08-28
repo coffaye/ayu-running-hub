@@ -25,6 +25,7 @@ from .errors import (
 from .report import (
     StructuredReport,
     report_from_model_output,
+    validate_semantic_grounding,
     validate_model_output,
     validate_structured_report,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "SourceEvidence",
     "StructuredReport",
     "report_from_model_output",
+    "validate_semantic_grounding",
     "validate_model_output",
     "render_html",
     "validate_structured_report",
