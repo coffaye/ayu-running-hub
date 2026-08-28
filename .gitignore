@@ -1,0 +1,24 @@
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.benchmark/
+
+# Local report/output artifacts
+output/
+engine/output/
+*.html
+*.png
+*.jsonl
+
+# IDE/OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

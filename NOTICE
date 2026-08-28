@@ -1,0 +1,12 @@
+Ayu Running Hub contains the Ayu Running report engine migrated from the
+`ayu-running-reports` project. The migration preserves the engine's public
+contract and sanitized fixtures while intentionally excluding the Codex plugin
+wrapper, Skill packaging and local report outputs.
+
+The `running_page` adapter is an interoperability boundary for the public
+`coffaye/running_page` data shape. It does not copy the upstream application's
+source code or claim ownership of that project.
+
+Third-party dependencies retain their own licenses. No credentials, raw FIT
+files, private routes, maps or provider responses are distributed here.
+
