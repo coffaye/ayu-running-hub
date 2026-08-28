@@ -54,13 +54,15 @@ fragments are rejected before rendering; detailed reasoning belongs in the
 Today, evidence, load/recovery, and next-training sections.
 
 Only timeout/network, 429, 408 and transient 5xx responses receive at most one
-bounded retry. A single corrective retry is also allowed for a semantic
-grounding or Hero-verdict failure; the second failure is terminal and no
-report is rendered. `Retry-After` is honored up to eight seconds; otherwise a
-bounded exponential delay is used. 400, 401/403, malformed output, incomplete
-output, content filtering, and schema failures remain terminal. Usage and
-latency metadata are returned separately; reasoning text is ignored and never
-persisted.
+bounded retry. Up to two corrective retries are allowed for semantic grounding,
+Hero-verdict, or user-facing prose-hygiene failures; the final failure is
+terminal and no report is rendered. The correction also reiterates that
+unsupported fields stay null/unknown and that user-facing prose must not leak
+raw values, literal `null`, or JSON/camelCase schema names. `Retry-After` is
+honored up to eight seconds; otherwise a bounded exponential delay is used.
+400, 401/403, malformed output, incomplete output, content filtering, and
+schema failures remain terminal. Usage and latency metadata are returned
+separately; reasoning text is ignored and never persisted.
 
 ## Explicit smoke test and benchmark
 

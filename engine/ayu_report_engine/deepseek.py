@@ -27,7 +27,7 @@ DEFAULT_REASONING_EFFORT = "high"
 DEFAULT_MAX_OUTPUT_TOKENS = 16384
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_RETRIES = 1
-MAX_SEMANTIC_RETRIES = 1
+MAX_SEMANTIC_RETRIES = 2
 ALLOWED_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
 ENV_FILE_NAMES = (".env.local", ".env")
 ENV_FILE_KEYS = frozenset(
@@ -318,7 +318,7 @@ def _extract_output_text(body: Mapping[str, Any]) -> str:
 
 
 def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
-    """Identify failures for which one corrective model response is useful."""
+    """Identify failures for which a bounded corrective model response is useful."""
 
     message = str(error)
     return any(
@@ -336,6 +336,9 @@ def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
             "verdict must not contain recommendation language",
             "verdict must not use evidence-list formatting",
             "verdict must remain",
+            "must not contain raw numeric values",
+            "must not contain the literal null",
+            "must not contain schema field names",
         )
     )
 
@@ -517,6 +520,8 @@ class DeepSeekAnalyzer:
                             str(payload["instructions"])
                             + "\n上一次输出未通过本地 semantic grounding。请重新完整输出 JSON：只陈述输入中明确存在的事实；"
                             "没有 structuredWorkout 时不要写训练完成、训练类型、有氧/无氧区间、配速稳定、负荷等级、恢复状态或生理代价；"
+                            "没有可靠的结构化训练、心率、分圈、负荷或恢复锚点时，相关字段必须保持 null/unknown；"
+                            "不要在任何用户文案中写数字、literal null 或 JSON/camelCase 字段名；"
                             "verdict 必须是 10–22 个可见字符的一句短结论。"
                         )
                         continue

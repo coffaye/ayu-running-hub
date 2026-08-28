@@ -154,7 +154,7 @@ class DeepSeekTests(unittest.TestCase):
         self.assertEqual(result.metadata.http_status, 200)
         self.assertEqual(result.metadata.response_status, "completed")
 
-    def test_semantic_failure_gets_one_corrective_retry(self):
+    def test_semantic_failure_gets_corrective_retry(self):
         first = {**valid_model_output(), "verdict": "建议今天继续训练并保持观察"}
         transport = MockTransport([completed_response(first), completed_response()])
         result = DeepSeekAnalyzer(self.config(), transport=transport).analyze_with_metadata(fit_context())
@@ -286,10 +286,14 @@ class DeepSeekTests(unittest.TestCase):
             {**valid_model_output(), "evidence": [{"metricRef": "summary.averageHrBpm", "interpretation": "字段为 null"}]},
         )
         for output in outputs:
-            transport = MockTransport([completed_response(output)])
+            # Prose-hygiene failures are eligible for bounded corrective retries;
+            # keep the model invalid on the follow-ups to verify the final
+            # validation error remains terminal and no report is returned.
+            transport = MockTransport([completed_response(output), completed_response(output), completed_response(output)])
             with self.assertRaises(DeepSeekError) as raised:
                 DeepSeekAnalyzer(self.config(), transport=transport).analyze(fit_context())
             self.assertEqual(raised.exception.category, "validation")
+            self.assertEqual(len(transport.calls), 3)
 
     def test_timeout_429_and_5xx_retry_once(self):
         for first in (
