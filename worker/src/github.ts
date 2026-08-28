@@ -29,7 +29,9 @@ export class GithubClient {
   constructor(config: GithubClientConfig) {
     this.config = config;
     if (!config.token) throw new Error('Hub Actions token is not configured');
-    this.fetcher = config.fetcher ?? fetch;
+    // Cloudflare Workers requires the platform fetch to retain its global
+    // receiver; an unbound reference throws Illegal invocation at runtime.
+    this.fetcher = config.fetcher ?? fetch.bind(globalThis);
     this.apiBaseUrl = config.apiBaseUrl ?? 'https://api.github.com';
   }
 
