@@ -109,6 +109,7 @@ test('generate page has no GET side effect and reports staging completion text',
   const html = await response.text();
   assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
   assert.match(html, /POST/);
+  assert.match(html, /正在提交/);
   assert.match(html, /日报已生成 · 测试分支写入成功/);
   assert.match(html, /run_id/);
 });
