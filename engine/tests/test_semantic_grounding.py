@@ -151,11 +151,16 @@ class SemanticGroundingTests(unittest.TestCase):
         self.assertEqual(report.recovery["assessment"], "恢复状态不可用。")
 
     def test_available_laps_cannot_be_described_as_missing(self) -> None:
-        output = conservative_output()
-        output["evidence"][1]["interpretation"] = "记录提供平均配速，但缺少分圈数据，无法评估稳定性。"
         context = replace(self.context, laps=({"index": 1, "paceSecPerKm": 320},))
-        with self.assertRaisesRegex(SchemaValidationError, "contradicts available lap data"):
-            report_from_model_output(output, context)
+        for statement in (
+            "记录提供平均配速，但缺少分圈数据，无法评估稳定性。",
+            "平均配速只是单点均值，不足以判断配速波动。",
+        ):
+            with self.subTest(statement=statement):
+                output = conservative_output()
+                output["evidence"][1]["interpretation"] = statement
+                with self.assertRaisesRegex(SchemaValidationError, "contradicts available lap data"):
+                    report_from_model_output(output, context)
 
 
 class VerdictTitleTests(unittest.TestCase):

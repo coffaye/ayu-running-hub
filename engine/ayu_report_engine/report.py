@@ -272,7 +272,8 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
     narratives = _report_narratives(report)
     if _context_has_collection(context, "laps", "splits"):
         unavailable_laps = re.compile(
-            r"(?:缺少|缺乏|没有|无|未提供|不可用).{0,10}(?:分圈|圈速)(?:数据|记录|信息)?",
+            r"(?:缺少|缺乏|没有|无|未提供|不可用).{0,10}(?:分圈|圈速)(?:数据|记录|信息)?"
+            r"|(?:单点|均值|平均配速).{0,18}(?:不足|无法|不能).{0,12}(?:波动|稳定)",
             flags=re.IGNORECASE,
         )
         for field, text in narratives:
