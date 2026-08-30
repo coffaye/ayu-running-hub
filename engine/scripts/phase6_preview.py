@@ -73,7 +73,7 @@ def main() -> int:
         "trials": trial_results,
     })
     if not successful_reports:
-        print(json.dumps({"status": "blocked", "reason": "all_three_trials_failed"}, ensure_ascii=False))
+        print(json.dumps({"status": "blocked", "reason": "all_three_trials_failed", "trials": trial_results}, ensure_ascii=False))
         return 1
     trial, report, html = successful_reports[0]
     canonical = args.output_dir / f"ayu_running_daily_{bundle['reportDate']}.html"

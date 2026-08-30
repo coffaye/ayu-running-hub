@@ -85,6 +85,7 @@ jobs:
       - name: Run three non-publication DeepSeek trials
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_TIMEOUT_SECONDS: "30"
         run: python engine/scripts/phase6_preview.py --bundle preview/coros-daily-bundle.json --output-dir preview --trials 3
 
       - name: Export Canvas PNG with a browser runtime
