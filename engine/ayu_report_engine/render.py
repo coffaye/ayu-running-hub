@@ -1,203 +1,228 @@
-"""Standalone Ayu HTML renderer with a browser-native Canvas PNG export."""
+"""Standalone Ayu Running HTML and dedicated Canvas executive-summary renderer."""
 
 from __future__ import annotations
 
-import html
+from html import escape
 import json
+import math
 from typing import Any, Iterable
 
 from .context import DailyRunContext
-from .metrics import metric_specs, resolve_metric_ref, validate_metric_refs
-from .report import StructuredReport, validate_structured_report
+from .display import build_png_report_view_model, build_report_view_model
+from .report import StructuredReport
 
 
 def _escape(value: object) -> str:
-    return html.escape(str(value), quote=True)
+    return escape("" if value is None else str(value), quote=True)
 
 
-def _display(value: object, unit: str = "") -> str:
-    if value is None:
+def _list(items: Iterable[str], class_name: str = "bullet-list") -> str:
+    values = [f"<li>{_escape(item)}</li>" for item in items if item]
+    return f'<ul class="{class_name}">{"".join(values)}</ul>' if values else ""
+
+
+def _metric_row(items: Iterable[dict[str, Any]], class_name: str = "metric-row") -> str:
+    values = [
+        f'<div class="metric"><div class="metric-label">{_escape(item.get("label"))}</div>'
+        f'<div class="metric-value">{_escape(item.get("value"))}</div></div>'
+        for item in items if item.get("value")
+    ]
+    return f'<div class="{class_name}">{"".join(values)}</div>' if values else ""
+
+
+def _headline(value: str) -> str:
+    for delimiter in ("，", "；", "。", ",", ";"):
+        if delimiter not in value:
+            continue
+        first, second = value.split(delimiter, 1)
+        if first.strip() and second.strip():
+            return (
+                f'<span class="headline-line" style="display:block">{_escape(first.strip() + delimiter)}</span>'
+                f'<span class="headline-line accent" style="display:block;color:var(--green)">{_escape(second.strip())}</span>'
+            )
+    return f'<span class="headline-line" style="display:block">{_escape(value)}</span>'
+
+
+def _svg_chart(laps: list[dict[str, Any]], key: str, title: str, color: str, *, invert: bool = False) -> str:
+    points: list[tuple[int, float]] = []
+    for index, lap in enumerate(laps):
+        value = lap.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+            points.append((index, float(value)))
+    if len(points) < 2:
         return ""
-    if isinstance(value, float):
-        shown = f"{value:.2f}".rstrip("0").rstrip(".")
-    else:
-        shown = str(value)
-    return f"{shown} {unit}".strip() if unit else shown
-
-
-def _metric_card(label: str, value: object, unit: str = "") -> str:
-    if value is None:
-        return ""
-    return f'<div class="metric"><div class="metric-label">{_escape(label)}</div><div class="metric-value">{_escape(_display(value, unit))}</div></div>'
-
-
-def _evidence_display(metric_ref: str, value: object, unit: str | None) -> str:
-    if metric_ref == "planned.structuredWorkout":
-        return "已提供结构化课表"
-    if metric_ref == "summary.lapSummary":
-        return f"{len(value)} 个分圈" if isinstance(value, (list, tuple)) else "已提供分圈摘要"
-    if metric_ref == "summary.splitSummary":
-        return f"{len(value)} 个分段" if isinstance(value, (list, tuple)) else "已提供分段摘要"
-    return _display(value, unit or "")
-
-
-def _svg_chart(laps: Iterable[dict[str, Any]], key: str, label: str, color: str) -> str:
-    values = [float(row[key]) for row in laps if isinstance(row.get(key), (int, float))]
-    if len(values) < 2:
-        return ""
-    width, height, pad = 620, 170, 24
+    width, height = 520, 210
+    left, right, top, bottom = 42, 18, 24, 34
+    values = [value for _, value in points]
     low, high = min(values), max(values)
-    span = high - low or 1
-    points = []
-    for index, value in enumerate(values):
-        x = pad + index * (width - 2 * pad) / (len(values) - 1)
-        y = height - pad - (value - low) * (height - 2 * pad) / span
-        points.append(f"{x:.1f},{y:.1f}")
-    return f'''<figure class="chart"><figcaption>{_escape(label)}</figcaption><svg viewBox="0 0 {width} {height}" role="img" aria-label="{_escape(label)}"><path d="M{pad} {height-pad}H{width-pad}" class="chart-axis"/><polyline points="{' '.join(points)}" fill="none" stroke="{color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></figure>'''
+    spread = max(high - low, 1.0)
+    coords: list[tuple[float, float]] = []
+    for ordinal, (_, value) in enumerate(points):
+        x = left + ordinal * (width - left - right) / max(len(points) - 1, 1)
+        ratio = (value - low) / spread
+        y = top + (ratio if invert else 1 - ratio) * (height - top - bottom)
+        coords.append((x, y))
+    path = " ".join(("M" if index == 0 else "L") + f"{x:.1f},{y:.1f}" for index, (x, y) in enumerate(coords))
+    circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" fill="{color}"/>' for x, y in coords)
+    grid = "".join(
+        f'<line x1="{left}" y1="{y}" x2="{width-right}" y2="{y}" class="chart-grid-line"/>'
+        for y in (top, (top + height - bottom) / 2, height - bottom)
+    )
+    return (
+        f'<figure class="chart"><figcaption>{_escape(title)}</figcaption>'
+        f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{_escape(title)}">{grid}'
+        f'<path d="{path}" fill="none" stroke="{color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>{circles}'
+        f'<text x="{left}" y="{height-9}" class="chart-label">1</text>'
+        f'<text x="{width-right}" y="{height-9}" text-anchor="end" class="chart-label">{len(points)}</text>'
+        '</svg></figure>'
+    )
 
 
-def _safe_lap(row: object) -> dict[str, Any]:
-    if not isinstance(row, dict):
-        return {}
-    pace = row.get("paceSecPerKm")
-    if pace is None and isinstance(row.get("averageSpeedMps"), (int, float)) and row["averageSpeedMps"] > 0:
-        pace = 1000 / float(row["averageSpeedMps"])
-    return {
-        "index": row.get("index"),
-        "distanceKm": row.get("distanceKm", (float(row["distanceM"]) / 1000 if isinstance(row.get("distanceM"), (int, float)) else None)),
-        "durationSec": row.get("durationSec", row.get("timerTimeSec")),
-        "paceSecPerKm": pace,
-        "heartRateBpm": row.get("heartRateBpm", row.get("averageHrBpm")),
-    }
-
-
-def _safe_model(report: StructuredReport, context: DailyRunContext) -> dict[str, Any]:
-    source = context.evidence[0].source_type if context.evidence else "unknown"
-    resolved_evidence = []
-    specs = metric_specs()
-    for item in report.evidence:
-        metric = resolve_metric_ref(context, item["metricRef"])
-        if metric is None:
-            raise ValueError(f"evidence metric is unavailable: {item['metricRef']}")
-        resolved_evidence.append({
-            "metricRef": metric.ref,
-            "label": specs[metric.ref].label,
-            "value": None if specs[metric.ref].collection else metric.value,
-            "unit": metric.unit,
-            "displayValue": _evidence_display(metric.ref, metric.value, metric.unit),
-            "source": metric.source,
-            "interpretation": item["interpretation"],
-        })
-    return {
-        "date": report.report_date,
-        "runId": report.run_id,
-        "verdict": report.verdict,
-        "trainingPurpose": report.training_purpose,
-        "completionStatus": report.completion.get("status"),
-        "trainingType": report.completion.get("trainingType"),
-        "score": report.completion.get("score"),
-        "distanceM": context.distance_m,
-        "timerTimeSec": context.timer_time_sec,
-        "elapsedTimeSec": context.elapsed_time_sec,
-        "movingTimeSec": context.moving_time_sec,
-        "displayDurationSec": context.display_duration_sec,
-        "displayDurationSource": context.display_duration_source,
-        "paceSecPerKm": context.average_pace_sec_per_km,
-        "heartRateBpm": context.average_hr_bpm,
-        "maxHeartRateBpm": context.max_hr_bpm,
-        "cadenceSpm": context.cadence_normalized_spm,
-        "strideM": context.stride_m,
-        "powerW": context.power_w,
-        "ascentM": context.ascent_m,
-        "laps": [_safe_lap(row) for row in context.laps] if context.laps is not None else [],
-        "load": report.load,
-        "recovery": report.recovery,
-        "loadFacts": {
-            "trainingEffectAerobic": context.training_effect_aerobic,
-            "trainingEffectAnaerobic": context.training_effect_anaerobic,
-            "trainingLoadPeak": context.training_load_peak,
-            "recentLoad": dict(context.recent_load) if context.recent_load is not None else None,
-        },
-        "recoveryFacts": {"percent": context.recovery_percent, "hours": context.recovery_hours, "runningFitness": context.running_fitness},
-        "todaySchedule": dict(context.today_schedule) if context.today_schedule is not None else None,
-        "tomorrowSchedule": dict(context.tomorrow_schedule) if context.tomorrow_schedule is not None else None,
-        "planAssociation": context.plan_association,
-        "dataQuality": dict(context.data_quality),
-        "evidence": resolved_evidence,
-        "shadowRunner": report.shadowrunner,
-        "bottleneck": report.bottleneck,
-        "applicableDomain": report.applicable_domain,
-        "marginalGain": report.marginal_gain,
-        "minimalReversibleNextStep": report.minimal_reversible_next_step,
-        "nextTrainingSuggestion": report.next_training_suggestion,
-        "uncertainty": list(report.uncertainty),
-        "source": source,
-    }
-
-
-def _schedule_text(schedule: dict[str, Any] | None) -> str:
-    if not schedule:
-        return ""
-    bits = [schedule.get("name"), _display(schedule.get("estimatedDistanceKm"), "km"), _display(schedule.get("estimatedDurationSec"), "s")]
-    return " · ".join(str(bit) for bit in bits if bit)
+def _schedule_block(view: dict[str, Any], label: str) -> str:
+    metrics = _metric_row(view.get("metrics") or (), "schedule-metrics")
+    steps = "".join(
+        f'<li><strong>{_escape(step.get("title"))}</strong><span>{_escape(step.get("detail"))}</span></li>'
+        for step in view.get("steps") or ()
+    )
+    steps_html = f'<ol class="steps">{steps}</ol>' if steps else ""
+    return (
+        f'<div class="structure-column"><div class="eyebrow">{_escape(label)}</div>'
+        f'<h3>{_escape(view.get("title"))}</h3>{metrics}{steps_html}</div>'
+    )
 
 
 def render_html(report: StructuredReport, context: DailyRunContext) -> str:
-    """Render the complete review surface; no network or chart library is used."""
+    view = build_report_view_model(report, context)
+    png_view = build_png_report_view_model(report, context)
+    score = view.get("score")
+    score_html = ""
+    if score:
+        state = " · ".join(item for item in (score.get("status"), score.get("training_type")) if item)
+        score_html = (
+            '<aside class="score"><div><span class="score-value">' + _escape(score.get("value")) + '</span>'
+            '<span class="score-max">' + _escape(score.get("maximum")) + '</span></div>'
+            '<div class="score-state"><span class="status-dot"></span>' + _escape(state) + '</div></aside>'
+        )
 
-    validate_structured_report(report.to_dict())
-    validate_metric_refs(report, context)
-    model = _safe_model(report, context)
-    model_json = json.dumps(model, ensure_ascii=False, sort_keys=True).replace("</", "<\\/")
-    completion_status = report.completion.get("status")
-    training_type = report.completion.get("trainingType")
-    status_text = " · ".join(str(value) for value in (completion_status, training_type) if value)
-    status_html = f'<div class="status"><span class="dot"></span>{_escape(status_text)}</div>' if status_text else ""
-    evidence_rows = "".join(
-        f'<li><span class="evidence-field">{_escape(item["label"])}</span><span class="evidence-value">{_escape(item["displayValue"])}</span><span class="muted">{_escape(item["interpretation"])}</span></li>'
-        for item in model["evidence"]
-    ) or '<li class="muted">暂无可用实测证据</li>'
-    laps = [dict(row) for row in model["laps"] if isinstance(row, dict)]
-    pace_chart = _svg_chart(laps, "paceSecPerKm", "分圈配速（秒/公里）", "#56FFA3")
-    hr_chart = _svg_chart(laps, "heartRateBpm", "分圈平均心率", "#FFB86B")
-    load_facts = model["loadFacts"]
-    recent = load_facts.get("recentLoad") or {}
-    shadow = model["shadowRunner"]
-    shadow_unknowns = "".join(f"<li>{_escape(item)}</li>" for item in shadow.get("unknowns", []))
-    uncertainty_rows = "".join(f"<li>{_escape(item)}</li>" for item in report.uncertainty)
-    today_text = _schedule_text(model["todaySchedule"])
-    tomorrow_text = _schedule_text(model["tomorrowSchedule"])
-    return f'''<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ayu Running · {_escape(report.report_date)}</title>
-  <style>
-    :root {{ color-scheme:dark; --bg:#080B09; --panel:#0D120F; --green:#56FFA3; --orange:#FFB86B; --text:#F2F6F3; --muted:rgba(242,246,243,.62); --line:rgba(86,255,163,.25); --font-ui:"Noto Sans CJK SC","Microsoft YaHei","PingFang SC",system-ui,sans-serif; --font-mono:"IBM Plex Mono","Noto Sans CJK SC","Microsoft YaHei",ui-monospace,monospace; }} * {{ box-sizing:border-box; }} html {{ scroll-behavior:smooth; }} body {{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font-ui); background-image:linear-gradient(rgba(86,255,163,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(86,255,163,.035) 1px,transparent 1px); background-size:90px 90px; }}
-    .app-header {{ position:fixed; z-index:10; top:0; left:0; right:0; height:68px; display:flex; align-items:center; justify-content:space-between; padding:0 max(24px,calc((100% - 1180px)/2)); border-bottom:1px solid var(--line); background:rgba(8,11,9,.82); backdrop-filter:blur(18px); }} .brand {{ font:600 1.05rem/1.2 "IBM Plex Mono",ui-monospace,monospace; letter-spacing:.03em; }} .brand .ayu {{ color:var(--green); }} .brand .running {{ color:#fff; }} .brand-dot {{ display:inline-block; width:7px; height:7px; margin-right:8px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); }} .download {{ border:1px solid var(--green); border-radius:999px; background:transparent; color:var(--green); padding:9px 16px; cursor:pointer; font:600 .76rem "IBM Plex Mono",monospace; }} .download:hover {{ background:rgba(86,255,163,.1); }}
-    .shell {{ width:min(1180px,calc(100% - 40px)); margin:0 auto; padding:116px 0 68px; }} .hero {{ padding:36px 0 44px; border-bottom:1px solid var(--line); }} .eyebrow {{ color:var(--green); font:600 .72rem/1.4 "IBM Plex Mono",monospace; letter-spacing:.13em; text-transform:uppercase; }} h1 {{ max-width:980px; margin:16px 0 18px; font-size:clamp(2.25rem,7vw,6.8rem); line-height:.98; letter-spacing:-.055em; }} .hero-meta {{ color:var(--muted); font:.82rem/1.6 "IBM Plex Mono",monospace; }} .nav {{ position:sticky; top:84px; z-index:5; display:flex; gap:8px; overflow:auto; padding:16px 0; background:linear-gradient(var(--bg) 65%,transparent); }} .nav a {{ flex:0 0 auto; color:var(--muted); border:1px solid rgba(242,246,243,.15); border-radius:999px; padding:8px 13px; text-decoration:none; font:600 .68rem "IBM Plex Mono",monospace; }} .nav a.active,.nav a:hover {{ color:var(--green); border-color:var(--green); background:rgba(86,255,163,.08); }}
-    section {{ scroll-margin-top:130px; padding:46px 0; border-bottom:1px solid rgba(242,246,243,.12); }} h2 {{ margin:0 0 20px; color:var(--green); font:600 .78rem/1.4 "IBM Plex Mono",monospace; letter-spacing:.1em; }} h3 {{ margin:0 0 9px; font-size:1.05rem; }} p {{ line-height:1.7; }} .lead {{ font-size:1.3rem; line-height:1.45; max-width:800px; }} .muted {{ color:var(--muted); }} .status {{ color:var(--green); font:600 .82rem "IBM Plex Mono",monospace; }} .split {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }} .output,.cost,.metric,.evidence-list,.schedule {{ background:var(--panel); border:1px solid rgba(242,246,243,.08); padding:20px; }} .output {{ border-color:var(--line); }} .kicker {{ color:var(--muted); font:600 .68rem "IBM Plex Mono",monospace; letter-spacing:.12em; }} .grid {{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }} .metric-label {{ color:var(--muted); font:.7rem/1.35 "IBM Plex Mono",monospace; }} .metric-value {{ margin-top:7px; font:1.1rem/1.3 "IBM Plex Mono",monospace; }} .dot {{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:8px; }}
-    .evidence-list {{ list-style:none; margin:0; padding:18px 22px; }} .evidence-list li {{ display:grid; grid-template-columns:150px 150px 1fr; gap:14px; align-items:baseline; padding:12px 0; border-bottom:1px solid rgba(242,246,243,.08); line-height:1.55; }} .evidence-list li:last-child {{ border-bottom:0; }} .evidence-field {{ color:var(--green); font:600 .78rem "IBM Plex Mono",monospace; }} .evidence-value {{ color:var(--text); font:600 .82rem "IBM Plex Mono",monospace; }} .chart-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px; }} .chart {{ margin:0; background:var(--panel); padding:16px; }} .chart figcaption {{ color:var(--muted); font:.7rem "IBM Plex Mono",monospace; margin-bottom:8px; }} .chart svg {{ display:block; width:100%; height:auto; }} .chart-axis {{ stroke:rgba(242,246,243,.18); stroke-width:1; }} .schedule-row {{ display:flex; justify-content:space-between; gap:16px; align-items:baseline; }} .schedule-title {{ color:var(--green); font-size:1.15rem; }} .pill {{ display:inline-block; border:1px solid var(--line); border-radius:999px; padding:5px 9px; color:var(--green); font:600 .66rem "IBM Plex Mono",monospace; }} ul.simple {{ margin:12px 0 0; padding-left:20px; }} ul.simple li {{ margin:7px 0; line-height:1.55; }} footer {{ padding-top:26px; color:var(--muted); font:.7rem "IBM Plex Mono",monospace; text-align:right; }}
-    @media (max-width:800px) {{ .shell {{ width:min(100% - 24px,680px); }} .app-header {{ padding:0 12px; }} .hero {{ padding-top:24px; }} .split,.chart-grid {{ grid-template-columns:1fr; }} .grid {{ grid-template-columns:repeat(2,minmax(0,1fr)); }} .evidence-list li {{ grid-template-columns:1fr; gap:4px; }} h1 {{ font-size:clamp(2.2rem,13vw,4.6rem); }} }}
-  </style>
-</head>
-<body>
-  <header class="app-header"><div class="brand"><span class="brand-dot"></span><span class="ayu">Ayu</span> <span class="running">Running</span></div><button id="download-png" class="download" type="button">下载 PNG</button></header>
-  <div class="shell"><main>
-    <div class="hero"><div class="eyebrow">DAILY REVIEW · {_escape(report.report_date)}</div><h1>{_escape(report.verdict)}</h1><div class="hero-meta">{_escape(_display(context.distance_m / 1000, "km"))} · {_escape(_display(context.display_duration_sec, "s"))} · {_escape(context.display_duration_source)}</div></div>
-    <nav class="nav" aria-label="报告导航"><a href="#today">TODAY</a><a href="#structure">STRUCTURE</a><a href="#evidence">EVIDENCE</a><a href="#load">LOAD</a><a href="#tomorrow">TOMORROW</a><a href="#shadow">SHADOW</a></nav>
-    <section id="today" data-png-section><h2>TODAY 今日结论</h2><div class="split"><div class="output"><div class="kicker">OUTPUT</div><p class="lead">{_escape(report.verdict)}</p>{status_html}</div><div class="cost"><div class="kicker">COST</div><p>{_escape(report.physiology_cost or '')}</p>{f'<p class="muted">{_escape((report.load or {}).get("assessment") or "")}</p>' if report.load else ''}</div></div></section>
-    <section id="structure" data-png-section><h2>STRUCTURE · 训练结构</h2>{f'<div class="schedule"><div class="schedule-row"><span class="schedule-title">{_escape(today_text)}</span><span class="pill">MATCHED</span></div><p class="muted">课表关联来自服务端日期与活动事实的交叉核验。</p></div>' if today_text and model["planAssociation"] == "MATCHED" else '<p class="muted">当前活动未形成可核验的课表关联，训练完成状态保持未知。</p>'}</section>
-    <section id="evidence" data-png-section><h2>EVIDENCE · 关键证据</h2><ul class="evidence-list">{evidence_rows}</ul><div class="grid" style="margin-top:16px">{_metric_card("距离", context.distance_m / 1000, "km")}{_metric_card("时长", context.display_duration_sec, "s")}{_metric_card("平均配速", context.average_pace_sec_per_km, "s/km")}{_metric_card("平均心率", context.average_hr_bpm, "bpm")}{_metric_card("步频", context.cadence_normalized_spm, "spm")}{_metric_card("功率", context.power_w, "W")}{_metric_card("爬升", context.ascent_m, "m")}</div><div class="chart-grid">{pace_chart}{hr_chart}</div></section>
-    <section id="load" data-png-section><h2>LOAD · 负荷与恢复</h2><div class="grid">{_metric_card("训练负荷", load_facts.get("trainingLoadPeak"))}{_metric_card("有氧效果", load_facts.get("trainingEffectAerobic"))}{_metric_card("短期负荷", recent.get("shortTermLoad"))}{_metric_card("长期负荷", recent.get("longTermLoad"))}{_metric_card("负荷比", recent.get("ratio"))}{_metric_card("恢复比例", model["recoveryFacts"].get("percent"), "%")}{_metric_card("预计恢复", model["recoveryFacts"].get("hours"), "h")}</div>{f'<p class="muted">{_escape((report.load or {}).get("assessment") or "")}</p>' if report.load else ''}{f'<p class="muted">{_escape((report.recovery or {}).get("assessment") or "")}</p>' if report.recovery else ''}</section>
-    <section id="tomorrow" data-png-section><h2>TOMORROW · 明日安排</h2>{f'<div class="schedule"><div class="schedule-row"><span class="schedule-title">{_escape(tomorrow_text)}</span><span class="pill">PLAN</span></div></div>' if tomorrow_text else '<p class="muted">未提供明日训练安排，本报告不补造计划。</p>'}</section>
-    <section id="shadow" data-png-section><h2>SHADOW · ShadowRunner</h2><div class="split"><div><div class="kicker">PRIMARY BOTTLENECK</div><p class="lead">{_escape(shadow.get("primaryBottleneck") or "未知")}</p><p class="muted">适用域：{_escape(shadow.get("applicableDomain") or "未知")} · 边际收益：{_escape(shadow.get("marginalGain") or "未知")}</p></div><div><div class="kicker">NEXT STEP</div><p>{_escape(shadow.get("nextStep") or "未知")}</p>{f'<ul class="simple">{shadow_unknowns}</ul>' if shadow_unknowns else ''}</div></div>{f'<ul class="simple muted">{uncertainty_rows}</ul>' if uncertainty_rows else ''}</section>
-  </main><footer>Ayu Running</footer></div>
-  <script id="report-data" type="application/json">{model_json}</script>
-  <script>
-    const MODEL = JSON.parse(document.getElementById('report-data').textContent); const EXPORT_WIDTH = 2480; const MIN_HEIGHT = 3508; const canvasText = (value) => value === null || value === undefined || value === '' ? '' : String(value); const wrap = (ctx, value, maxWidth) => {{ const chars = Array.from(canvasText(value)); const leadingPunctuation = '，。！？；：、）》」』】”’…'; let line = ''; const lines = []; for (const char of chars) {{ const next = line + char; if (line && ctx.measureText(next).width > maxWidth) {{ if (leadingPunctuation.includes(char)) {{ line = next; continue; }} lines.push(line); line = char; }} else line = next; }} if (line) lines.push(line); return lines; }};
-    async function downloadPng() {{ if (document.fonts && document.fonts.ready) await document.fonts.ready; const scale = 2, logicalWidth = EXPORT_WIDTH / scale, margin = 84, contentWidth = logicalWidth - margin * 2; const measure = document.createElement('canvas'), mctx = measure.getContext('2d'); mctx.font = '28px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif'; const blocks = Array.from(document.querySelectorAll('[data-png-section]')).map(section => [section.querySelector('h2')?.innerText || '', section.innerText.replace(/\\s+/g, ' ').trim()]); let y = 156; const wrapped = []; for (const [label, value] of blocks) {{ const lines = wrap(mctx, value, contentWidth); wrapped.push([label, lines]); y += 62 + lines.length * 43 + 32; }} const measuredBottom = y; const logicalHeight = Math.max(MIN_HEIGHT / scale, measuredBottom + 80); const canvas = document.createElement('canvas'); canvas.width = EXPORT_WIDTH; canvas.height = Math.ceil(logicalHeight * scale); const ctx = canvas.getContext('2d'); ctx.scale(scale, scale); ctx.fillStyle = '#080B09'; ctx.fillRect(0, 0, logicalWidth, logicalHeight); ctx.strokeStyle = 'rgba(86,255,163,.28)'; ctx.beginPath(); ctx.moveTo(margin, 78); ctx.lineTo(logicalWidth - margin, 78); ctx.stroke(); ctx.font = '600 28px "IBM Plex Mono", "Noto Sans CJK SC", monospace'; ctx.fillStyle = '#56FFA3'; ctx.fillText('Ayu', margin, 47); ctx.fillStyle = '#F2F6F3'; ctx.fillText(' Running', margin + 58, 47); ctx.font = '24px "IBM Plex Mono", "Noto Sans CJK SC", monospace'; ctx.fillStyle = 'rgba(242,246,243,.62)'; ctx.fillText(MODEL.date, logicalWidth - margin - ctx.measureText(MODEL.date).width, 47); y = 156; ctx.font = '600 22px "IBM Plex Mono", "Noto Sans CJK SC", monospace'; for (const [label, lines] of wrapped) {{ ctx.fillStyle = '#56FFA3'; ctx.fillText(label, margin, y); y += 43; ctx.font = '28px "Noto Sans CJK SC", "Microsoft YaHei", "PingFang SC", sans-serif'; ctx.fillStyle = '#F2F6F3'; for (const line of lines) {{ ctx.fillText(line, margin, y); y += 43; }} y += 32; ctx.font = '600 22px "IBM Plex Mono", "Noto Sans CJK SC", monospace'; }} ctx.strokeStyle = 'rgba(86,255,163,.28)'; ctx.beginPath(); ctx.moveTo(margin, measuredBottom - 18); ctx.lineTo(logicalWidth - margin, measuredBottom - 18); ctx.stroke(); canvas.toBlob(blob => {{ if (!blob) return; const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'ayu_running_daily_' + MODEL.date + '.png'; a.click(); URL.revokeObjectURL(url); }}, 'image/png'); }}
-    document.getElementById('download-png').addEventListener('click', downloadPng); const links = [...document.querySelectorAll('.nav a')], sections = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean); const observer = new IntersectionObserver(entries => entries.forEach(entry => {{ if (entry.isIntersecting) links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === '#' + entry.target.id)); }}), {{ rootMargin: '-25% 0px -60% 0px', threshold: 0 }}); sections.forEach(section => observer.observe(section));
-  </script>
-</body>
-</html>'''
+    output_cost = ""
+    if view["output"] or view["cost"]:
+        output_cost = (
+            '<div class="output-cost"><div><div class="section-label">OUTPUT 做得好的地方</div>'
+            + _list(view["output"])
+            + '</div><div><div class="section-label">COST 当前观察点</div>'
+            + _list(view["cost"])
+            + '</div></div>'
+        )
+
+    structure = view["structure"]
+    structure_html = ""
+    if structure.get("plan"):
+        structure_html = (
+            '<div class="structure-grid">'
+            + _schedule_block(structure["plan"], "PLAN 计划")
+            + _schedule_block(structure["actual"], "ACTUAL 实际")
+            + '</div>'
+            + (f'<p class="section-note">{_escape(structure.get("note"))}</p>' if structure.get("note") else "")
+        )
+
+    laps = view.get("laps") or []
+    pace_chart = _svg_chart(laps, "paceSecPerKm", "分圈配速趋势", "#56FFA3", invert=True)
+    hr_chart = _svg_chart(laps, "heartRateBpm", "分圈平均心率趋势", "#FFB86B")
+    charts_html = f'<div class="chart-grid">{pace_chart}{hr_chart}</div>' if pace_chart or hr_chart else ""
+
+    evidence_html = "".join(
+        '<li><div><span class="evidence-label">' + _escape(item["label"]) + '</span>'
+        '<strong>' + _escape(item["value"]) + '</strong></div><p>' + _escape(item["interpretation"]) + '</p></li>'
+        for item in view["evidence"]
+    )
+
+    load = view["load"]
+    recovery_html = ""
+    if load.get("recovery_percent"):
+        recovery_html = (
+            '<div class="recovery"><div><span class="recovery-value">' + _escape(load["recovery_percent"]) + '</span>'
+            '<span class="recovery-unit">%</span></div>'
+            + (f'<div class="recovery-time"><span class="status-dot"></span>{_escape(load.get("recovery_time"))}</div>' if load.get("recovery_time") else "")
+            + '</div>'
+        )
+    load_html = (
+        '<div class="load-layout"><div class="load-main">'
+        + (f'<h3>{_escape(load.get("headline"))}</h3>' if load.get("headline") else "")
+        + _metric_row(load.get("metrics") or (), "load-metrics")
+        + (f'<div class="load-status"><span class="status-dot"></span>{_escape(load.get("status"))}</div>' if load.get("status") else "")
+        + '</div>' + recovery_html + '</div>'
+    )
+
+    tomorrow = view.get("tomorrow")
+    tomorrow_html = ""
+    tomorrow_nav = ""
+    if tomorrow and tomorrow.get("schedule"):
+        schedule = tomorrow["schedule"]
+        tomorrow_html = (
+            '<section id="tomorrow"><div class="section-label">TOMORROW 明日课表</div>'
+            '<h2>明日课表：' + _escape(schedule.get("title")) + '</h2>'
+            '<div class="tomorrow-name">' + _escape(schedule.get("title")) + '</div>'
+            + _metric_row(schedule.get("metrics") or (), "tomorrow-metrics")
+            + (f'<p class="tomorrow-context">{_escape(tomorrow.get("context"))}</p>' if tomorrow.get("context") else "")
+            + '</section>'
+        )
+        tomorrow_nav = '<a href="#tomorrow">明日课表</a>'
+
+    focus = view.get("focus") or {}
+    focus_html = ""
+    if focus.get("headline") or focus.get("next"):
+        focus_html = (
+            '<section id="focus"><div class="section-label">FOCUS 当前最值得盯的一件事</div>'
+            + (f'<h2>{_escape(focus.get("headline"))}</h2>' if focus.get("headline") else "")
+            + (f'<p class="focus-next">{_escape(focus.get("next"))}</p>' if focus.get("next") else "")
+            + '</section>'
+        )
+
+    replacements = {
+        "__TITLE__": _escape(view["headline"]), "__DATE__": _escape(view["date_display"]),
+        "__HEADLINE__": _headline(view["headline"]), "__SUBTITLE__": _escape(view["subtitle"]),
+        "__SCORE__": score_html, "__METRICS__": _metric_row(view["primary_metrics"], "primary-metrics"),
+        "__TODAY_HEADLINE__": _escape(view["today"]["headline"]),
+        "__TODAY_EXPLANATION__": _escape(view["today"].get("explanation")),
+        "__OUTPUT_COST__": output_cost, "__STRUCTURE__": structure_html, "__CHARTS__": charts_html,
+        "__EVIDENCE__": evidence_html, "__LOAD__": load_html, "__TOMORROW__": tomorrow_html,
+        "__TOMORROW_NAV__": tomorrow_nav, "__FOCUS__": focus_html,
+        "__PNG_JSON__": json.dumps(png_view, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/"),
+    }
+    html = _TEMPLATE
+    for marker, replacement in replacements.items():
+        html = html.replace(marker, replacement)
+    return html
+
+
+_TEMPLATE = r'''<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ayu Running · __TITLE__</title><style>
+:root{color-scheme:dark;--bg:#080B09;--soft:#0D120F;--green:#56FFA3;--orange:#FFB86B;--text:#F2F6F3;--secondary:rgba(242,246,243,.7);--meta:rgba(242,246,243,.42);--line:rgba(242,246,243,.13);--green-line:rgba(86,255,163,.22);--font-ui:"Noto Sans CJK SC","Microsoft YaHei","PingFang SC",system-ui,sans-serif;--font-mono:"IBM Plex Mono","Noto Sans CJK SC","Microsoft YaHei",ui-monospace,monospace}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);background-image:radial-gradient(circle at 50% -10%,rgba(86,255,163,.07),transparent 34%),linear-gradient(rgba(86,255,163,.026) 1px,transparent 1px),linear-gradient(90deg,rgba(86,255,163,.026) 1px,transparent 1px);background-size:auto,90px 90px,90px 90px}
+.app-header{position:fixed;z-index:20;top:14px;left:50%;transform:translateX(-50%);width:min(1180px,calc(100% - 32px));height:58px;padding:0 18px 0 22px;display:flex;align-items:center;justify-content:space-between;border:1px solid rgba(242,246,243,.1);border-radius:999px;background:rgba(8,11,9,.82);backdrop-filter:blur(18px)}.brand{font:700 .95rem/1 var(--font-ui)}.brand .ayu{color:var(--green)}.brand-dot,.status-dot{display:inline-block;width:8px;height:8px;margin-right:10px;border-radius:50%;background:var(--green);box-shadow:0 0 14px rgba(86,255,163,.45)}.download{border:1px solid rgba(242,246,243,.13);border-radius:999px;background:rgba(242,246,243,.035);color:var(--text);padding:10px 17px;cursor:pointer;font:700 .75rem var(--font-ui)}
+.shell{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:142px 0 64px}.hero{min-height:570px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(220px,.55fr);gap:72px;align-content:center;border-bottom:1px solid var(--line);padding:52px 0 70px}.hero-copy h1{margin:0;max-width:900px;font-size:clamp(4.2rem,7.2vw,7.3rem);line-height:.94;letter-spacing:-.07em;font-weight:900}.session-subtitle{max-width:760px;margin:30px 0 0;color:var(--secondary);font-size:1.18rem;line-height:1.7}.hero-meta{margin-top:78px;color:var(--meta);font:600 .72rem var(--font-mono);letter-spacing:.03em}.hero-meta .sync{color:var(--green);margin-right:24px}.score{align-self:center;text-align:right}.score-value{font:800 4.5rem/1 var(--font-mono)}.score-max{margin-left:8px;color:var(--green);font:700 1.45rem var(--font-mono)}.score-state{margin-top:16px;color:var(--secondary);font-size:.95rem}
+.primary-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border-bottom:1px solid var(--line);padding:24px 0}.metric{min-width:0;padding:8px 18px;border-left:1px solid var(--line)}.metric:first-child{padding-left:0;border-left:0}.metric-label{color:var(--meta);font-size:.72rem}.metric-value{margin-top:10px;white-space:nowrap;font:700 1.15rem/1.2 var(--font-mono)}.nav{position:sticky;z-index:10;top:82px;width:max-content;max-width:100%;margin:24px auto 0;display:flex;gap:4px;padding:5px;border:1px solid rgba(242,246,243,.1);border-radius:999px;background:rgba(8,11,9,.86);backdrop-filter:blur(16px);overflow:auto}.nav a{flex:0 0 auto;border-radius:999px;padding:9px 14px;color:var(--meta);text-decoration:none;font:600 .69rem var(--font-ui)}.nav a.active,.nav a:hover{color:var(--text);background:rgba(86,255,163,.08)}
+section{scroll-margin-top:140px;padding:72px 0;border-bottom:1px solid var(--line)}.section-label,.eyebrow{color:var(--green);font:800 .78rem/1.4 var(--font-ui)}h2{margin:14px 0 18px;max-width:980px;font-size:clamp(2rem,4vw,3.25rem);line-height:1.16;letter-spacing:-.04em}h3{margin:14px 0;font-size:1.6rem}.today-copy{max-width:960px;color:var(--secondary);font-size:1.08rem;line-height:1.8}.output-cost{display:grid;grid-template-columns:1fr 1fr;gap:64px;margin-top:58px}.output-cost>div+div{border-left:1px solid var(--line);padding-left:64px}.bullet-list{list-style:none;margin:24px 0 0;padding:0}.bullet-list li{position:relative;margin:18px 0;padding-left:23px;color:var(--secondary);font-size:1rem;line-height:1.6}.bullet-list li::before{content:"";position:absolute;left:0;top:.68em;width:7px;height:7px;border-radius:50%;background:var(--green)}
+.structure-grid{display:grid;grid-template-columns:1fr 1fr;gap:64px}.structure-column+.structure-column{border-left:1px solid var(--line);padding-left:64px}.schedule-metrics,.tomorrow-metrics,.load-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:28px}.schedule-metrics .metric,.tomorrow-metrics .metric,.load-metrics .metric{padding-top:0;padding-bottom:0}.steps{margin:28px 0 0;padding:0;list-style:none}.steps li{display:flex;justify-content:space-between;gap:20px;padding:13px 0;border-top:1px solid var(--line);color:var(--secondary)}.steps span{color:var(--meta);font:600 .75rem var(--font-mono)}.section-note{color:var(--meta);margin:30px 0 0}.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:58px}.chart{margin:0;padding-top:18px;border-top:1px solid var(--green-line)}.chart figcaption{margin-bottom:18px;color:var(--secondary);font-size:.8rem}.chart svg{display:block;width:100%;height:auto}.chart-grid-line{stroke:rgba(242,246,243,.11);stroke-width:1}.chart-label{fill:rgba(242,246,243,.36);font:12px var(--font-mono)}
+.evidence-list{list-style:none;margin:20px 0 0;padding:0}.evidence-list li{display:grid;grid-template-columns:220px 1fr;gap:48px;padding:22px 0;border-top:1px solid var(--line)}.evidence-list li>div{display:flex;justify-content:space-between;gap:16px;font:700 .82rem var(--font-mono)}.evidence-label{color:var(--green)}.evidence-list p{margin:0;color:var(--secondary);line-height:1.7}.load-layout{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:72px;align-items:end}.load-main h3{font-size:2rem}.load-metrics{max-width:680px}.load-status{margin:32px 0 0;color:var(--green);font-size:1.2rem}.recovery{text-align:right;min-width:180px}.recovery-value{font:800 4.5rem/1 var(--font-mono)}.recovery-unit{margin-left:8px;color:var(--green);font:700 1.35rem var(--font-mono)}.recovery-time{margin-top:18px;color:var(--secondary);font-size:.85rem}.tomorrow-name{margin:34px 0;color:var(--green);font:900 clamp(3.3rem,7vw,6rem)/1 var(--font-ui);letter-spacing:-.055em}.tomorrow-metrics{max-width:760px}.tomorrow-context,.focus-next{max-width:980px;margin:34px 0 0;color:var(--secondary);font-size:1.02rem;line-height:1.75}footer{padding-top:30px;text-align:right;color:var(--meta);font:.68rem var(--font-mono)}
+@media(max-width:800px){.app-header{top:8px;width:calc(100% - 16px)}.shell{width:calc(100% - 28px);padding-top:106px}.hero{min-height:auto;grid-template-columns:1fr;gap:34px;padding:62px 0 48px}.hero-copy h1{font-size:clamp(3.25rem,15vw,5.3rem)}.session-subtitle{font-size:1rem}.hero-meta{margin-top:44px}.score{text-align:left}.score-value{font-size:3.7rem}.primary-metrics{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px 0}.primary-metrics .metric{padding:16px 12px}.primary-metrics .metric:nth-child(odd){border-left:0;padding-left:0}.nav{top:74px;margin-top:14px}section{padding:54px 0}h2{font-size:2rem}.output-cost,.structure-grid,.chart-grid,.load-layout{grid-template-columns:1fr;gap:36px}.output-cost>div+div,.structure-column+.structure-column{border-left:0;border-top:1px solid var(--line);padding:36px 0 0}.schedule-metrics,.tomorrow-metrics,.load-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.schedule-metrics .metric,.tomorrow-metrics .metric,.load-metrics .metric{padding:0 9px}.evidence-list li{grid-template-columns:1fr;gap:12px}.recovery{text-align:left}.tomorrow-name{font-size:3.3rem}}
+</style></head><body><header class="app-header"><div class="brand"><span class="brand-dot"></span><span class="ayu">Ayu</span> Running</div><button id="download-png" class="download" type="button">下载 PNG</button></header><div class="shell"><main>
+<div class="hero"><div class="hero-copy"><h1>__HEADLINE__</h1><p class="session-subtitle">__SUBTITLE__</p><div class="hero-meta"><span class="sync"><span class="status-dot"></span>COROS MCP 已同步</span>__DATE__</div></div>__SCORE__</div>__METRICS__
+<nav class="nav" aria-label="报告导航"><a href="#today">总览</a><a href="#structure">训练结构</a><a href="#evidence">关键证据</a><a href="#load">近期负荷</a>__TOMORROW_NAV__</nav>
+<section id="today"><div class="section-label">TODAY 今日结论</div><h2>__TODAY_HEADLINE__</h2><p class="today-copy">__TODAY_EXPLANATION__</p>__OUTPUT_COST__</section>
+<section id="structure"><div class="section-label">STRUCTURE 训练结构</div>__STRUCTURE____CHARTS__</section><section id="evidence"><div class="section-label">EVIDENCE 关键证据</div><ul class="evidence-list">__EVIDENCE__</ul></section><section id="load"><div class="section-label">LOAD 近期负荷</div>__LOAD__</section>__TOMORROW____FOCUS__</main><footer>Ayu Running</footer></div>
+<script id="png-report" type="application/json">__PNG_JSON__</script><script>
+const PNG_REPORT=JSON.parse(document.getElementById('png-report').textContent);const W=1240,MIN_H=1754,SCALE=2,M=82,GREEN='#56FFA3',TEXT='#F2F6F3',SECONDARY='rgba(242,246,243,.70)',META='rgba(242,246,243,.42)',LINE='rgba(242,246,243,.14)',BG='#080B09';const UI='"Noto Sans CJK SC","Microsoft YaHei","PingFang SC",sans-serif';const MONO='"IBM Plex Mono","Noto Sans CJK SC","Microsoft YaHei",monospace';
+function lines(ctx,text,width){const chars=Array.from(String(text||''));const punctuation='，。！？；：、）》」』】”’…';const out=[];let line='';for(const char of chars){const next=line+char;if(line&&ctx.measureText(next).width>width){if(punctuation.includes(char)){line=next;continue}out.push(line);line=char}else line=next}if(line)out.push(line);return out}
+function textBlock(ctx,text,x,y,width,font,lineHeight,color,draw=true){ctx.font=font;ctx.fillStyle=color;const wrapped=lines(ctx,text,width);if(draw)wrapped.forEach((line,index)=>ctx.fillText(line,x,y+index*lineHeight));return y+wrapped.length*lineHeight}function divider(ctx,y){ctx.strokeStyle=LINE;ctx.beginPath();ctx.moveTo(M,y);ctx.lineTo(W-M,y);ctx.stroke()}
+function drawHeader(ctx,y,draw=true){if(draw){ctx.font=`700 20px ${UI}`;ctx.fillStyle=GREEN;ctx.beginPath();ctx.arc(M+6,y-6,6,0,Math.PI*2);ctx.fill();ctx.fillText('Ayu',M+28,y);ctx.fillStyle=TEXT;ctx.fillText(' Running',M+64,y);ctx.font=`600 17px ${UI}`;ctx.fillStyle=META;const right=`COROS MCP 已同步 · ${PNG_REPORT.date_display}`;ctx.fillText(right,W-M-ctx.measureText(right).width,y)}if(draw)divider(ctx,y+34);return y+76}
+function drawHero(ctx,y,draw=true){const titleWidth=PNG_REPORT.score?760:W-M*2;ctx.font=`900 66px ${UI}`;const titleLines=lines(ctx,PNG_REPORT.headline,titleWidth);if(draw)titleLines.forEach((line,index)=>{ctx.fillStyle=index===titleLines.length-1?GREEN:TEXT;ctx.fillText(line,M,y+index*70)});if(draw&&PNG_REPORT.score){const score=PNG_REPORT.score;ctx.font=`800 58px ${MONO}`;ctx.fillStyle=TEXT;ctx.fillText(score.value,W-M-155,y+12);ctx.font=`700 22px ${MONO}`;ctx.fillStyle=GREEN;ctx.fillText(score.maximum,W-M-58,y+12);const state=[score.status,score.training_type].filter(Boolean).join(' · ');ctx.beginPath();ctx.arc(W-M-145,y+58,5,0,Math.PI*2);ctx.fill();ctx.font=`500 17px ${UI}`;ctx.fillStyle=SECONDARY;ctx.fillText(state,W-M-130,y+64)}let next=y+titleLines.length*70+28;next=textBlock(ctx,PNG_REPORT.subtitle,M,next,titleWidth,`500 22px ${UI}`,34,SECONDARY,draw);if(draw)divider(ctx,next+30);return next+66}
+function drawMetrics(ctx,y,draw=true){const items=PNG_REPORT.primary_metrics||[];const width=(W-M*2)/Math.max(items.length,1);if(draw)items.forEach((item,index)=>{const x=M+index*width;if(index){ctx.strokeStyle=LINE;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,y+70);ctx.stroke()}ctx.font=`500 14px ${UI}`;ctx.fillStyle=META;ctx.fillText(item.label,x+(index?18:0),y+17);ctx.font=`700 22px ${MONO}`;ctx.fillStyle=TEXT;ctx.fillText(item.value,x+(index?18:0),y+52)});if(draw)divider(ctx,y+96);return y+132}
+function drawToday(ctx,y,draw=true){if(draw){ctx.font=`800 18px ${UI}`;ctx.fillStyle=GREEN;ctx.fillText('TODAY 今日结论',M,y)}let next=y+48;next=textBlock(ctx,PNG_REPORT.today.headline,M,next,W-M*2,`800 34px ${UI}`,46,TEXT,draw);next+=10;next=textBlock(ctx,PNG_REPORT.today.explanation,M,next,W-M*2,`500 21px ${UI}`,34,SECONDARY,draw);if(draw)divider(ctx,next+38);return next+76}
+function bulletColumn(ctx,title,items,x,y,width,draw=true){if(draw){ctx.font=`800 17px ${UI}`;ctx.fillStyle=GREEN;ctx.fillText(title,x,y)}let next=y+38;ctx.font=`500 19px ${UI}`;for(const item of items||[]){const wrapped=lines(ctx,item,width-28);if(draw){ctx.fillStyle=GREEN;ctx.beginPath();ctx.arc(x+4,next-6,5,0,Math.PI*2);ctx.fill();ctx.fillStyle=SECONDARY;wrapped.forEach((line,index)=>ctx.fillText(line,x+22,next+index*31))}next+=wrapped.length*31+15}return next}
+function drawOutputCost(ctx,y,draw=true){const gap=56,width=(W-M*2-gap)/2;const left=bulletColumn(ctx,'OUTPUT 做得好的地方',PNG_REPORT.output,M,y,width,draw);const right=bulletColumn(ctx,'COST 当前观察点',PNG_REPORT.cost,M+width+gap,y,width,draw);const next=Math.max(left,right);if(draw)divider(ctx,next+28);return next+66}
+function drawLoad(ctx,y,draw=true){if(draw){ctx.font=`800 18px ${UI}`;ctx.fillStyle=GREEN;ctx.fillText('LOAD 近期负荷',M,y)}let next=y+46;if(PNG_REPORT.load.headline)next=textBlock(ctx,PNG_REPORT.load.headline,M,next,720,`800 32px ${UI}`,43,TEXT,draw);next+=24;const metrics=PNG_REPORT.load.metrics||[];if(draw)metrics.forEach((item,index)=>{const x=M+index*210;ctx.font=`500 14px ${UI}`;ctx.fillStyle=META;ctx.fillText(item.label,x,next);ctx.font=`700 24px ${MONO}`;ctx.fillStyle=TEXT;ctx.fillText(item.value,x,next+34)});if(draw&&PNG_REPORT.load.status){ctx.fillStyle=GREEN;ctx.beginPath();ctx.arc(M+690,next+25,5,0,Math.PI*2);ctx.fill();ctx.font=`500 21px ${UI}`;ctx.fillText(PNG_REPORT.load.status,M+706,next+32)}if(draw&&PNG_REPORT.load.recovery_percent){ctx.font=`800 56px ${MONO}`;ctx.fillStyle=TEXT;ctx.fillText(PNG_REPORT.load.recovery_percent,W-M-150,next+25);ctx.font=`700 22px ${MONO}`;ctx.fillStyle=GREEN;ctx.fillText('%',W-M-65,next+25)}next+=76;if(draw)divider(ctx,next+28);return next+66}
+function drawTomorrow(ctx,y,draw=true){if(!PNG_REPORT.tomorrow)return y;if(draw){ctx.font=`800 18px ${UI}`;ctx.fillStyle=GREEN;ctx.fillText('TOMORROW 明日课表',M,y)}let next=y+48;const plan=PNG_REPORT.tomorrow.schedule;if(draw){ctx.font=`800 32px ${UI}`;ctx.fillStyle=TEXT;ctx.fillText(`明日课表：${plan.title||''}`,M,next)}next+=58;next=textBlock(ctx,plan.title||'',M,next,W-M*2,`900 58px ${UI}`,66,GREEN,draw)+18;const metrics=plan.metrics||[];if(draw)metrics.forEach((item,index)=>{const x=M+index*250;ctx.font=`500 14px ${UI}`;ctx.fillStyle=META;ctx.fillText(item.label,x,next);ctx.font=`700 24px ${MONO}`;ctx.fillStyle=TEXT;ctx.fillText(item.value,x,next+34)});next+=78;next=textBlock(ctx,PNG_REPORT.tomorrow.context||'',M,next,W-M*2,`500 20px ${UI}`,32,SECONDARY,draw);if(draw)divider(ctx,next+34);return next+72}
+async function downloadPng(){if(document.fonts&&document.fonts.ready)await document.fonts.ready;const measure=document.createElement('canvas').getContext('2d');let y=62;y=drawHeader(measure,y,false);y=drawHero(measure,y,false);y=drawMetrics(measure,y,false);y=drawToday(measure,y,false);y=drawOutputCost(measure,y,false);y=drawLoad(measure,y,false);y=drawTomorrow(measure,y,false);const logicalHeight=Math.max(MIN_H,Math.ceil(y+72));const canvas=document.createElement('canvas');canvas.width=W*SCALE;canvas.height=logicalHeight*SCALE;const ctx=canvas.getContext('2d');ctx.scale(SCALE,SCALE);ctx.fillStyle=BG;ctx.fillRect(0,0,W,logicalHeight);ctx.strokeStyle='rgba(86,255,163,.026)';ctx.lineWidth=1;for(let gx=0;gx<W;gx+=90){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,logicalHeight);ctx.stroke()}for(let gy=0;gy<logicalHeight;gy+=90){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke()}y=62;y=drawHeader(ctx,y,true);y=drawHero(ctx,y,true);y=drawMetrics(ctx,y,true);y=drawToday(ctx,y,true);y=drawOutputCost(ctx,y,true);y=drawLoad(ctx,y,true);y=drawTomorrow(ctx,y,true);canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`Ayu_Running_${PNG_REPORT.date}.png`;a.click();URL.revokeObjectURL(url)},'image/png')}
+document.getElementById('download-png').addEventListener('click',downloadPng);const links=[...document.querySelectorAll('.nav a')],sections=links.map(link=>document.querySelector(link.getAttribute('href'))).filter(Boolean);const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting)links.forEach(link=>link.classList.toggle('active',link.getAttribute('href')==='#'+entry.target.id))}),{rootMargin:'-25% 0px -60% 0px',threshold:0});sections.forEach(section=>observer.observe(section));
+</script></body></html>'''

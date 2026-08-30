@@ -9,7 +9,6 @@ from pathlib import Path
 import sys
 
 from ayu_report_engine.bundle import context_from_coros_bundle, load_coros_bundle
-from ayu_report_engine.analysis import FixtureAnalyzer
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig, DeepSeekError
 from ayu_report_engine.render import render_html
 from ayu_report_engine.version import PROMPT_VERSION, RENDERER_VERSION
@@ -31,11 +30,11 @@ def main() -> int:
     context = context_from_coros_bundle(bundle)
     base = DeepSeekConfig.from_env()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    efforts = ("low", "medium", "high")
     trial_results: list[dict[str, object]] = []
     successful_reports = []
-    for trial, effort in enumerate(efforts, start=1):
-        config = replace(base, reasoning_effort=effort)
+    for trial in range(1, 4):
+        effort = "low"
+        config = replace(base, reasoning_effort="low")
         try:
             result = DeepSeekAnalyzer(config).analyze_with_metadata(context)
             html = render_html(result.report, context)
@@ -55,6 +54,9 @@ def main() -> int:
                 "reasoningTokens": result.metadata.reasoning_tokens,
                 "totalTokens": result.metadata.total_tokens,
                 "retryCount": result.metadata.retry_count,
+                "verdict": result.report.verdict,
+                "visibleChars": len(result.report.verdict + "".join(str(item.get("interpretation") or "") for item in result.report.evidence)),
+                "semanticGate": "PASS",
             })
         except DeepSeekError as exc:
             trial_results.append({
@@ -74,30 +76,35 @@ def main() -> int:
         "successfulTrials": len(successful_reports),
         "trials": trial_results,
     })
-    if not successful_reports:
-        fallback_report = FixtureAnalyzer().analyze(context)
-        fallback_html = render_html(fallback_report, context)
-        canonical = args.output_dir / f"ayu_running_daily_{bundle['reportDate']}.html"
-        canonical.write_text(fallback_html, encoding="utf-8")
-        fallback = {
+    if len(successful_reports) != 3:
+        failed = {
             "schemaVersion": "phase6-preview-v1",
-            "status": "visual_review_ready",
-            "analysisSource": "offline_fixture_fallback",
-            "deepseekStatus": "all_three_trials_failed",
-            "reason": "provider_network_timeout",
+            "status": "PHASE6_DEEPSEEK_FAILED",
+            "analysisSource": None,
+            "deepseekStatus": "insufficient_valid_trials",
             "promptVersion": PROMPT_VERSION,
             "rendererVersion": RENDERER_VERSION,
             "reportDate": bundle["reportDate"],
+            "successfulTrials": len(successful_reports),
             "trials": trial_results,
         }
-        _write_json(args.output_dir / "preview-status.json", fallback)
-        _write_json(args.output_dir / "selected-trial.json", {"analysisSource": "offline_fixture_fallback", "status": "visual_review_ready"})
-        print(json.dumps({"status": "visual_review_ready", "analysisSource": "offline_fixture_fallback", "deepseekTrials": trial_results}, ensure_ascii=False))
-        return 0
+        _write_json(args.output_dir / "preview-status.json", failed)
+        print(json.dumps(failed, ensure_ascii=False))
+        return 2
     trial, report, html = successful_reports[0]
     canonical = args.output_dir / f"ayu_running_daily_{bundle['reportDate']}.html"
     canonical.write_text(html, encoding="utf-8")
-    _write_json(args.output_dir / "selected-trial.json", {"trial": trial, "status": "selected_first_validated_trial"})
+    _write_json(args.output_dir / "selected-trial.json", {"trial": trial, "analysisSource": "deepseek", "status": "selected_first_of_three_validated_trials"})
+    _write_json(args.output_dir / "preview-status.json", {
+        "schemaVersion": "phase6-preview-v1",
+        "status": "ready_for_png_export",
+        "analysisSource": "deepseek",
+        "deepseekStatus": "three_of_three_valid",
+        "promptVersion": PROMPT_VERSION,
+        "rendererVersion": RENDERER_VERSION,
+        "reportDate": bundle["reportDate"],
+        "successfulTrials": 3,
+    })
     print(json.dumps({"status": "ready_for_png_export", "successfulTrials": len(successful_reports), "selectedTrial": trial}, ensure_ascii=False))
     return 0
 

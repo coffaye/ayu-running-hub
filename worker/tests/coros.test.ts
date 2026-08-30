@@ -182,15 +182,15 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
     const args = body.params.arguments ?? {};
     let result: unknown;
     if (name === 'querySportRecords') result = { records: [{ startTimestamp: '1787870493000', labelId: 'hidden', sportType: 100, title: '稳态跑' }] };
-    else if (name === 'getActivityDetail') result = { distance: 11.28, duration: 3600, movingPace: 342, averagePace: 345, averageHeartRate: 146, maxHeartRate: 158, cadence: 178, strideLength: 1.02, power: 197, elevationGain: 55, calories: 760, trainingLoad: 118, aerobicTrainingEffect: 3.1, anaerobicTrainingEffect: 0.4, trainingFocus: '有氧耐力', performance: '良好', perceivedEffort: '中等' };
+    else if (name === 'getActivityDetail') result = { distance: 11.28, duration: 3600, movingPace: 342, averagePace: 345, averageHeartRate: 146, cadence: 178, strideLength: 1.02, power: 197, elevationGain: 55, calories: 760, trainingLoad: 118, aerobicTrainingEffect: 3.1, anaerobicTrainingEffect: 0.4, trainingFocus: '有氧耐力', performance: '良好', perceivedEffort: '中等' };
     else if (name === 'queryActivityLapData') result = { laps: [
       { lapIndex: 1, distance: 1, duration: 330, pace: 330, avgHr: 140, maxHr: 151, power: 190, cadence: 177 },
       { lapIndex: 2, distance: 1, duration: 345, pace: 345, avgHr: 146, maxHr: 158, power: 197, cadence: 178 },
     ] };
     else if (name === 'queryTrainingLoadAssessment') result = { records: [{ date: '2026-08-28', shortTermLoad: 410, longTermLoad: 520, ratio: 0.79, status: '平衡' } ] };
     else if (name === 'queryRecoveryStatus') result = { recoveryPercent: 74, estimatedFullRecoveryAt: '2026-08-31T02:00:00Z' };
-    else if (name === 'queryTrainingSchedule' && args.startDate === '20260828') result = { schedules: [{ date: '20260828', title: '稳态跑', sportType: 'running', plannedDistance: 11.3, plannedDuration: 3600, plannedLoad: 120, steps: [{ title: '主训练', duration: 3600 }] }] };
-    else if (name === 'queryTrainingSchedule') result = { schedules: [{ date: '20260829', title: '轻松跑', sportType: 'running', plannedDistance: 8, plannedDuration: 2700, plannedLoad: 70 }] };
+    else if (name === 'queryTrainingSchedule' && args.startDate === '20260828') result = 'Training Schedule\n========================\n\n2026-08-28\n稳态跑\nDistance: 11.30 km\nEstimated Time: 1:00:00\nLoad: 120 TL';
+    else if (name === 'queryTrainingSchedule') result = 'Training Schedule\n========================\n\n2026-08-29\n轻松跑\nDistance: 8.00 km\nEstimated Time: 45:00\nLoad: 70 TL';
     else if (name === 'queryFitnessAssessmentOverview') result = { runningFitness: 62.5 };
     else result = {};
     return Response.json({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
@@ -207,7 +207,8 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   assert.equal(bundle.laps[0].heartRateBpm, 140);
   assert.equal(bundle.laps[1].maxHeartRateBpm, 158);
   assert.equal(bundle.trainingContext.planAssociation, 'MATCHED');
-  assert.equal(bundle.trainingContext.todaySchedule?.steps.length, 1);
+  assert.equal(bundle.trainingContext.todaySchedule?.estimatedDurationSec, 3600);
+  assert.equal(bundle.trainingContext.todaySchedule?.plannedLoad, 120);
   assert.equal(bundle.tomorrowSchedule?.title, '轻松跑');
   assert.equal(bundle.recentLoad?.reportDate, '2026-08-28');
   assert.equal(bundle.recovery?.reportDateAligned, false);

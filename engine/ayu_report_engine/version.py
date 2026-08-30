@@ -1,9 +1,9 @@
 """Version identity shared by Codex, CLI, and future Actions callers."""
 
-ENGINE_VERSION = "0.3.0"
+ENGINE_VERSION = "0.4.0"
 SCHEMA_VERSION = "1.1"
 PROMPT_VERSION = "ayu-daily-v7"
-RENDERER_VERSION = "ayu-html-canvas-v2"
+RENDERER_VERSION = "ayu-html-canvas-v3"
 
 
 def runtime_engine_commit() -> str | None:

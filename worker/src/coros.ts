@@ -1009,6 +1009,31 @@ export class CorosCredentialBroker {
         sourceDisplayValue: [title, distance.display, duration.display].filter((item): item is string => item !== null).join(' · ') || null,
       });
     }
+    if (!result.length) {
+      const block = this.textBlockForDate(value, compactDate);
+      if (block) {
+        const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const dateIndex = lines.findIndex((line) => this.dateValue(line) === compactDate);
+        const title = lines.slice(Math.max(0, dateIndex + 1)).find((line) =>
+          !/^(?:=+|-+|training schedule)$/i.test(line)
+          && !/^(?:distance|estimated time|load)\s*[:：]/i.test(line)
+        ) ?? null;
+        const distance = this.metric(block, ['distance', 'plannedDistance', 'estimatedDistance'], 'distance');
+        const duration = this.metric(block, ['estimatedTime', 'plannedDuration', 'estimatedDuration', 'duration'], 'duration');
+        const load = this.metric(block, ['load', 'plannedLoad', 'trainingLoad'], 'number');
+        if (title !== null || distance.value !== null || duration.value !== null || load.value !== null) {
+          result.push({
+            title,
+            sportType: null,
+            estimatedDistanceKm: distance.value,
+            estimatedDurationSec: duration.value,
+            plannedLoad: load.value,
+            steps: [],
+            sourceDisplayValue: [title, distance.display, duration.display, load.display].filter((item): item is string => item !== null).join(' · ') || null,
+          });
+        }
+      }
+    }
     return result;
   }
 
@@ -1186,8 +1211,12 @@ export class CorosCredentialBroker {
     const activity = this.activityArguments(records, runId);
     const detail = await this.callTool(token, 'getActivityDetail', activity, 4);
     const lapsResult = await this.callTool(token, 'queryActivityLapData', activity, 5);
-    const activityFacts = { ...this.activityFacts({ detail, summary: records }, records), sportType: activity.sportType };
+    let activityFacts = { ...this.activityFacts({ detail, summary: records }, records), sportType: activity.sportType };
     const laps = this.lapFacts(lapsResult);
+    if (activityFacts.maxHeartRateBpm === null) {
+      const lapMaxHeartRates = laps.map((lap) => lap.maxHeartRateBpm).filter((value): value is number => value !== null);
+      if (lapMaxHeartRates.length) activityFacts = { ...activityFacts, maxHeartRateBpm: Math.max(...lapMaxHeartRates) };
+    }
 
     let loadResult = await this.optionalTool(token, 'queryTrainingLoadAssessment', { startDate: compactReportDate, endDate: compactReportDate }, 6);
     if (!loadResult) loadResult = await this.optionalTool(token, 'queryTrainingLoadAssessment', { days: 30 }, 16);
