@@ -18,6 +18,17 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _selection_quality(report: object) -> tuple[int, int, int, int, int]:
+    bottleneck = str(getattr(report, "bottleneck", "") or "").strip()
+    next_step = str(getattr(report, "minimal_reversible_next_step", "") or "").strip()
+    physiology = str(getattr(report, "physiology_cost", "") or "").strip()
+    evidence = tuple(getattr(report, "evidence", ()) or ())
+    visible = len(str(getattr(report, "verdict", "") or "") + physiology + bottleneck + next_step)
+    meaningful_bottleneck = bool(bottleneck and "unknown" not in bottleneck.lower() and "无法判断" not in bottleneck)
+    grounded_signal = any(marker in bottleneck for marker in ("心率", "配速", "负荷", "功率", "步频"))
+    return int(meaningful_bottleneck), int(bool(next_step)), int(grounded_signal), len(evidence), visible
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", type=Path, required=True)
@@ -91,10 +102,22 @@ def main() -> int:
         _write_json(args.output_dir / "preview-status.json", failed)
         print(json.dumps(failed, ensure_ascii=False))
         return 2
-    trial, report, html = successful_reports[0]
+    trial, report, html = max(successful_reports, key=lambda item: _selection_quality(item[1]))
+    selection_quality = _selection_quality(report)
     canonical = args.output_dir / f"ayu_running_daily_{bundle['reportDate']}.html"
     canonical.write_text(html, encoding="utf-8")
-    _write_json(args.output_dir / "selected-trial.json", {"trial": trial, "analysisSource": "deepseek", "status": "selected_first_of_three_validated_trials"})
+    _write_json(args.output_dir / "selected-trial.json", {
+        "trial": trial,
+        "analysisSource": "deepseek",
+        "status": "selected_best_of_three_validated_trials",
+        "selectionQuality": {
+            "meaningfulBottleneck": bool(selection_quality[0]),
+            "reversibleNextStep": bool(selection_quality[1]),
+            "groundedSignal": bool(selection_quality[2]),
+            "evidenceCount": selection_quality[3],
+            "coreVisibleChars": selection_quality[4],
+        },
+    })
     _write_json(args.output_dir / "preview-status.json", {
         "schemaVersion": "phase6-preview-v1",
         "status": "ready_for_png_export",
