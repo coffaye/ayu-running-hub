@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import unittest
@@ -148,6 +149,13 @@ class SemanticGroundingTests(unittest.TestCase):
         self.assertIn("无法判断配速稳定性", report.evidence[1]["interpretation"])
         self.assertEqual(report.load["assessment"], "负荷未知。")
         self.assertEqual(report.recovery["assessment"], "恢复状态不可用。")
+
+    def test_available_laps_cannot_be_described_as_missing(self) -> None:
+        output = conservative_output()
+        output["evidence"][1]["interpretation"] = "记录提供平均配速，但缺少分圈数据，无法评估稳定性。"
+        context = replace(self.context, laps=({"index": 1, "paceSecPerKm": 320},))
+        with self.assertRaisesRegex(SchemaValidationError, "contradicts available lap data"):
+            report_from_model_output(output, context)
 
 
 class VerdictTitleTests(unittest.TestCase):

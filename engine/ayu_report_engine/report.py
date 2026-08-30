@@ -270,6 +270,15 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
                 raise SchemaValidationError(f"completion.{field} requires a structured workout")
 
     narratives = _report_narratives(report)
+    if _context_has_collection(context, "laps", "splits"):
+        unavailable_laps = re.compile(
+            r"(?:缺少|缺乏|没有|无|未提供|不可用).{0,10}(?:分圈|圈速)(?:数据|记录|信息)?",
+            flags=re.IGNORECASE,
+        )
+        for field, text in narratives:
+            if isinstance(text, str) and unavailable_laps.search(text):
+                raise SchemaValidationError(f"{field} contradicts available lap data")
+
     if not _context_has_reliable_hr_anchor(context):
         for field, text in narratives:
             if _find_unsupported_claim(text, _HR_CLAIMS):

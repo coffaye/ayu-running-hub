@@ -330,6 +330,7 @@ def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
             "unsupported load claim",
             "unsupported recovery claim",
             "unsupported workout claim",
+            "contradicts available lap data",
             "lacks supporting physiological facts",
             "verdict must contain",
             "verdict must be a single line",
