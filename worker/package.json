@@ -6,7 +6,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev",
-    "deploy:staging": "wrangler deploy"
+    "deploy:staging": "wrangler deploy",
+    "deploy:phase6": "wrangler deploy --config wrangler.phase6.jsonc"
   },
   "devDependencies": {
     "@types/node": "^24.2.1",

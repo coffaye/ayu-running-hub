@@ -14,7 +14,9 @@ import {
   type LockRecord,
 } from '../src/core.ts';
 import {
+  collectorSigningPayload,
   parseBasicCredentials,
+  signCollectorPayload,
   timingSafeEqual,
   verifyBasicCredentials,
 } from '../src/auth.ts';
@@ -293,4 +295,79 @@ test('generate page has no GET side effect and reports production completion tex
   assert.match(html, /日报已生成/);
   assert.doesNotMatch(html, /测试分支写入成功/);
   assert.match(html, /run_id/);
+});
+
+test('Phase 6 bootstrap is separate from Basic Auth and rejects overwrite by default', async () => {
+  const forwardedBodies: string[] = [];
+  const brokerStub = {
+    fetch: async (request: Request) => {
+      forwardedBodies.push(await request.text());
+      return Response.json({ credentialGeneration: 1, authState: 'READY' });
+    },
+  };
+  const testApp = createApp({ createCorosBrokerStub: () => brokerStub });
+  const env = { ...authEnv, COROS_BOOTSTRAP_SECRET: 'bootstrap-secret' };
+  const body = JSON.stringify({
+    issuer: 'https://mcpcn.coros.com',
+    mcpUrl: 'https://mcpcn.coros.com/mcp',
+    clientId: 'client',
+    accessToken: 'access',
+    refreshToken: 'refresh',
+    accessExpiresAt: 9999999999,
+    scope: 'mcp.tools openid offline_access',
+  });
+  const denied = await testApp.fetch(new Request('https://staging.example/internal/coros/bootstrap', { method: 'POST', body } ), env);
+  assert.equal(denied.status, 401);
+  const accepted = await testApp.fetch(new Request('https://staging.example/internal/coros/bootstrap', {
+    method: 'POST',
+    headers: { 'x-coros-bootstrap-secret': 'bootstrap-secret', 'content-type': 'application/json' },
+    body,
+  }), env);
+  assert.equal(accepted.status, 200);
+  assert.equal(forwardedBodies.length, 1);
+  assert.equal(forwardedBodies[0], body);
+});
+
+test('Phase 6 bootstrap enforces the body size limit even without Content-Length', async () => {
+  let forwarded = false;
+  const brokerStub = { fetch: async () => { forwarded = true; return Response.json({ ok: true }); } };
+  const testApp = createApp({ createCorosBrokerStub: () => brokerStub });
+  const env = { ...authEnv, COROS_BOOTSTRAP_SECRET: 'bootstrap-secret' };
+  const oversized = JSON.stringify({ value: 'x'.repeat(64 * 1024) });
+  const response = await testApp.fetch(new Request('https://staging.example/internal/coros/bootstrap', {
+    method: 'POST',
+    headers: { 'x-coros-bootstrap-secret': 'bootstrap-secret', 'transfer-encoding': 'chunked' },
+    body: oversized,
+  }), env);
+  assert.equal(response.status, 400);
+  assert.equal(forwarded, false);
+});
+
+test('Phase 6 collector HMAC rejects wrong/stale requests and forwards only signed run identity', async () => {
+  let forwarded = 0;
+  const brokerStub = { fetch: async () => { forwarded += 1; return Response.json({ ok: true }); } };
+  const nowMs = 1_000_000;
+  const secret = 'collector-secret';
+  const testApp = createApp({ createCorosBrokerStub: () => brokerStub, now: () => nowMs });
+  const env = { ...authEnv, AYU_COLLECTOR_SHARED_SECRET: secret };
+  const timestamp = Math.floor(nowMs / 1000);
+  const requestId = 'request-1';
+  const runId = '1787870493000';
+  const body = JSON.stringify({ requestId, runId });
+  const payload = await collectorSigningPayload(timestamp, requestId, runId, 'POST', '/internal/coros/probe', body);
+  const signature = await signCollectorPayload(secret, payload);
+  const baseHeaders = {
+    'content-type': 'application/json',
+    'x-ayu-timestamp': String(timestamp),
+    'x-ayu-request-id': requestId,
+    'x-ayu-run-id': runId,
+    'x-ayu-signature': signature,
+  };
+  const wrong = await testApp.fetch(new Request('https://staging.example/internal/coros/probe', { method: 'POST', headers: { ...baseHeaders, 'x-ayu-signature': '00' }, body }), env);
+  assert.equal(wrong.status, 401);
+  const stale = await testApp.fetch(new Request('https://staging.example/internal/coros/probe', { method: 'POST', headers: { ...baseHeaders, 'x-ayu-timestamp': '1' }, body }), env);
+  assert.equal(stale.status, 401);
+  const accepted = await testApp.fetch(new Request('https://staging.example/internal/coros/probe', { method: 'POST', headers: baseHeaders, body }), env);
+  assert.equal(accepted.status, 200);
+  assert.equal(forwarded, 1);
 });

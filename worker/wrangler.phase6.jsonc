@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ayu-running-hub-phase6",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "HUB_REPOSITORY": "coffaye/ayu-running-hub",
+    "HUB_WORKFLOW": "generate-report.yml",
+    "RUNNING_PAGE_REPOSITORY": "coffaye/running_page",
+    "REPORT_AUTH_USERNAME": "ayu"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "REPORT_GENERATION_LOCK", "class_name": "RunGenerationLock" },
+      { "name": "COROS_CREDENTIAL_BROKER", "class_name": "CorosCredentialBroker" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RunGenerationLock", "CorosCredentialBroker"] }
+  ]
+}

@@ -1,5 +1,11 @@
-import { unauthorizedResponse, verifyBasicCredentials } from './auth.ts';
+import {
+  unauthorizedResponse,
+  timingSafeEqual,
+  verifyBasicCredentials,
+  verifyCollectorRequest,
+} from './auth.ts';
 import { normalizeRunId, type LockRecord } from './core.ts';
+import { CorosCredentialBroker, CorosBrokerError } from './coros.ts';
 import { GithubClient } from './github.ts';
 import { RunGenerationLock } from './lock.ts';
 import { jsonResponse, renderGeneratePage } from './pages.ts';
@@ -30,11 +36,17 @@ export interface GithubClientLike {
 export interface WorkerDependencies {
   createGithubClient?: (env: Env) => GithubClientLike;
   sleep?: (milliseconds: number) => Promise<void>;
+  createCorosBrokerStub?: (env: Env) => DurableObjectStubLike;
+  now?: () => number;
 }
 
 export interface Env {
   REPORT_GENERATION_LOCK: DurableObjectNamespaceLike;
   HUB_ACTIONS_TOKEN: string;
+  COROS_CREDENTIAL_BROKER?: DurableObjectNamespaceLike;
+  AYU_COLLECTOR_SHARED_SECRET?: string;
+  COROS_BOOTSTRAP_SECRET?: string;
+  COROS_CREDENTIAL_KEK?: string;
   REPORT_AUTH_USERNAME?: string;
   REPORT_AUTH_PASSWORD?: string;
   HUB_REPOSITORY?: string;
@@ -174,16 +186,82 @@ const status = async (runId: string, env: Env, dependencies: Required<WorkerDepe
   }
 };
 
+const corosBrokerStub = (env: Env): DurableObjectStubLike => {
+  if (!env.COROS_CREDENTIAL_BROKER) throw new CorosBrokerError('COROS_BROKER_NOT_CONFIGURED', 503);
+  return env.COROS_CREDENTIAL_BROKER.get(env.COROS_CREDENTIAL_BROKER.idFromName('coros:primary'));
+};
+
+const internalUnauthorized = (): Response =>
+  jsonResponse({ error: 'Unauthorized' }, 401);
+
+const parseObjectBody = (body: string): Record<string, unknown> | null => {
+  try {
+    const value: unknown = JSON.parse(body);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+};
+
+const bootstrap = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
+  if (!env.COROS_BOOTSTRAP_SECRET) return jsonResponse({ error: 'Not found' }, 404);
+  const supplied = request.headers.get('x-coros-bootstrap-secret') ?? '';
+  const valid = supplied.length > 0 && await timingSafeEqual(supplied, env.COROS_BOOTSTRAP_SECRET);
+  if (!valid) return internalUnauthorized();
+  const contentLength = Number(request.headers.get('content-length') ?? '0');
+  if (contentLength > 64 * 1024) return jsonResponse({ error: 'COROS_BOOTSTRAP_INVALID' }, 400);
+  const body = await request.text();
+  if (body.length > 64 * 1024) return jsonResponse({ error: 'COROS_BOOTSTRAP_INVALID' }, 400);
+  if (!parseObjectBody(body)) return jsonResponse({ error: 'COROS_BOOTSTRAP_INVALID' }, 400);
+  try {
+    return await dependencies.createCorosBrokerStub(env).fetch(new Request('https://coros-broker.internal/bootstrap', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    }));
+  } catch {
+    return jsonResponse({ error: 'COROS_BROKER_NOT_CONFIGURED' }, 503);
+  }
+};
+
+const validateProbeBody = (body: Record<string, unknown>, auth: { requestId: string; runId: string }): boolean => {
+  const keys = Object.keys(body).sort();
+  return keys.length === 2 && keys[0] === 'requestId' && keys[1] === 'runId'
+    && body.requestId === auth.requestId
+    && body.runId === auth.runId;
+};
+
+const probe = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
+  if (!env.AYU_COLLECTOR_SHARED_SECRET) return jsonResponse({ error: 'Not found' }, 404);
+  const auth = await verifyCollectorRequest(request, env.AYU_COLLECTOR_SHARED_SECRET, Math.floor(dependencies.now() / 1000));
+  if (!auth) return internalUnauthorized();
+  const body = parseObjectBody(auth.body);
+  if (!body || !validateProbeBody(body, auth)) return jsonResponse({ error: 'COROS_PROBE_INVALID' }, 400);
+  try {
+    return await dependencies.createCorosBrokerStub(env).fetch(new Request('https://coros-broker.internal/probe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ runId: auth.runId, requestId: auth.requestId }),
+    }));
+  } catch {
+    return jsonResponse({ error: 'COROS_BROKER_NOT_CONFIGURED' }, 503);
+  }
+};
+
 export const createApp = (overrides: WorkerDependencies = {}) => {
   const dependencies: Required<WorkerDependencies> = {
     createGithubClient: overrides.createGithubClient ?? clientFor,
     sleep: overrides.sleep ?? delay,
+    createCorosBrokerStub: overrides.createCorosBrokerStub ?? corosBrokerStub,
+    now: overrides.now ?? (() => Date.now()),
   };
   return {
     async fetch(request: Request, env: Env): Promise<Response> {
+      const url = new URL(request.url);
+      if (request.method === 'POST' && url.pathname === '/internal/coros/bootstrap') return bootstrap(request, env, dependencies);
+      if (request.method === 'POST' && url.pathname === '/internal/coros/probe') return probe(request, env, dependencies);
       const denied = await authenticate(request, env);
       if (denied) return denied;
-      const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/generate') {
         try {
           return renderGeneratePage(normalizeRunId(url.searchParams.get('run_id') ?? ''));
@@ -209,4 +287,4 @@ const app = createApp();
 
 export default app;
 
-export { RunGenerationLock };
+export { RunGenerationLock, CorosCredentialBroker };

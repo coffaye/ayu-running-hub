@@ -69,3 +69,70 @@ export const verifyBasicCredentials = async (
   ]);
   return usernameMatches && passwordMatches;
 };
+
+export interface CollectorAuthResult {
+  body: string;
+  timestamp: number;
+  requestId: string;
+  runId: string;
+}
+
+const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+const hexToBytes = (value: string): Uint8Array | null => {
+  if (!/^[0-9a-f]{64}$/i.test(value)) return null;
+  const bytes = new Uint8Array(32);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+};
+
+export const sha256Hex = async (value: string): Promise<string> =>
+  bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))));
+
+export const collectorSigningPayload = async (
+  timestamp: number,
+  requestId: string,
+  runId: string,
+  method: string,
+  path: string,
+  body: string,
+): Promise<string> =>
+  [String(timestamp), requestId, runId, method.toUpperCase(), path, await sha256Hex(body)].join('\n');
+
+export const signCollectorPayload = async (secret: string, payload: string): Promise<string> => {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))));
+};
+
+export const verifyCollectorRequest = async (
+  request: Request,
+  secret: string,
+  nowSeconds = Math.floor(Date.now() / 1000),
+  freshnessSeconds = 300,
+): Promise<CollectorAuthResult | null> => {
+  if (!secret) return null;
+  const timestampValue = request.headers.get('x-ayu-timestamp');
+  const requestId = request.headers.get('x-ayu-request-id') ?? '';
+  const runId = request.headers.get('x-ayu-run-id') ?? '';
+  const signature = request.headers.get('x-ayu-signature') ?? '';
+  if (!timestampValue || !/^\d{1,12}$/.test(timestampValue) || !requestId || requestId.length > 128 || !runId || runId.length > 32 || !/^\d+$/.test(runId)) return null;
+  const timestamp = Number(timestampValue);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(nowSeconds - timestamp) > freshnessSeconds) return null;
+  const body = await request.clone().text();
+  const payload = await collectorSigningPayload(timestamp, requestId, runId, request.method, new URL(request.url).pathname, body);
+  const expected = hexToBytes(await signCollectorPayload(secret, payload));
+  const actual = hexToBytes(signature);
+  if (!expected || !actual || expected.length !== actual.length) return null;
+  let difference = 0;
+  for (let index = 0; index < expected.length; index += 1) difference |= expected[index] ^ actual[index];
+  return difference === 0 ? { body, timestamp, requestId, runId } : null;
+};
