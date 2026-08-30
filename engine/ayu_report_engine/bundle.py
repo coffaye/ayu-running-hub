@@ -57,6 +57,7 @@ def coros_daily_bundle_json_schema() -> dict[str, Any]:
             "activity": activity, "laps": {"type": "array"},
             "trainingContext": {"type": "object", "additionalProperties": False, "required": ["todaySchedule", "planAssociation", "planAssociationEvidence"], "properties": {"todaySchedule": schedule, "planAssociation": {"enum": ["MATCHED", "UNMATCHED", "AMBIGUOUS"]}, "planAssociationEvidence": {"type": "array", "items": {"type": "string"}}}},
             "recentLoad": {"type": ["object", "null"]}, "recovery": {"type": ["object", "null"]}, "fitness": {"type": ["object", "null"]}, "tomorrowSchedule": schedule,
+            "diagnostics": {"type": "object"},
             "dataQuality": {"type": "object"}, "provenance": {"type": "object", "required": ["source", "tools"], "properties": {"source": {"const": "coros-mcp"}, "tools": {"type": "object"}}},
         },
     }

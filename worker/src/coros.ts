@@ -168,6 +168,11 @@ export interface CorosRecoveryFacts {
   reportDateAligned: boolean;
 }
 
+export interface CorosSafeDiagnostic {
+  objectKeys: string[];
+  textPreview: string | null;
+}
+
 export interface CorosDailyBundle {
   schemaVersion: '1.0';
   runId: string;
@@ -197,6 +202,12 @@ export interface CorosDailyBundle {
   provenance: {
     source: 'coros-mcp';
     tools: Record<string, string>;
+  };
+  diagnostics?: {
+    activityDetail: CorosSafeDiagnostic;
+    laps: CorosSafeDiagnostic;
+    todaySchedule: CorosSafeDiagnostic | null;
+    tomorrowSchedule: CorosSafeDiagnostic | null;
   };
 }
 
@@ -738,6 +749,25 @@ export class CorosCredentialBroker {
     return texts.join('\n');
   }
 
+  private safeDiagnostic(value: unknown): CorosSafeDiagnostic {
+    const forbidden = /(?:labelid|planid|idinplan|deviceid|activityid|fiturl|accesstoken|refreshtoken|coordinates?|polyline|route|mapurl|location)/i;
+    const objectKeys = [...new Set(
+      collectObjects(value)
+        .flatMap((record) => Object.keys(record))
+        .filter((key) => !forbidden.test(normalizedKey(key))),
+    )].sort().slice(0, 120);
+    const textPreview = this.textFromResult(value)
+      .split(/\r?\n/)
+      .filter((line) => !forbidden.test(normalizedKey(line.split(/[:：=]/, 1)[0] ?? '')))
+      .map((line) => line
+        .replace(/https?:\/\/\S+/gi, '[REDACTED_URL]')
+        .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[REDACTED_TOKEN]'))
+      .join('\n')
+      .trim()
+      .slice(0, 6000);
+    return { objectKeys, textPreview: textPreview || null };
+  }
+
   private activityArguments(result: unknown, runId: string): { labelId: string; sportType: number } {
     const runMilliseconds = Number(runId);
     const runSeconds = Math.floor(runMilliseconds / 1000);
@@ -819,7 +849,7 @@ export class CorosCredentialBroker {
     const adjustedPace = this.metric(source, ['adjustedPace', 'adjustedPaceSecPerKm'], 'pace');
     const bestKm = this.metric(source, ['bestKm', 'bestKilometer', 'bestKmPace'], 'pace');
     const averageHr = this.metric(source, ['averageHeartRate', 'avgHeartRate', 'averageHr', 'avgHr'], 'number');
-    const maxHr = this.metric(source, ['maxHeartRate', 'maximumHeartRate', 'maxHr'], 'number');
+    const maxHr = this.metric(source, ['maxHeartRate', 'maximumHeartRate', 'maxHr', 'maximumHr', 'maxHeartRateBpm'], 'number');
     const cadence = this.metric(source, ['cadence', 'averageCadence', 'cadenceSpm'], 'number');
     const stride = this.metric(source, ['stride', 'strideLength', 'averageStride', 'averageStrideLength'], 'number');
     const power = this.metric(source, ['power', 'averagePower', 'powerW'], 'number');
@@ -895,8 +925,8 @@ export class CorosCredentialBroker {
         distanceKm: distance.value,
         durationSec: duration.value,
         paceSecPerKm: pace.value,
-        heartRateBpm: this.metric(record, ['averageHeartRate', 'avgHeartRate', 'averageHr', 'heartRate'], 'number').value,
-        maxHeartRateBpm: this.metric(record, ['maxHeartRate', 'maxHr'], 'number').value,
+        heartRateBpm: this.metric(record, ['averageHeartRate', 'avgHeartRate', 'averageHr', 'avgHr', 'heartRate', 'heartRateBpm'], 'number').value,
+        maxHeartRateBpm: this.metric(record, ['maxHeartRate', 'maxHr', 'maximumHr', 'maxHeartRateBpm'], 'number').value,
         powerW: this.metric(record, ['power', 'averagePower', 'powerW'], 'number').value,
         cadenceSpm: this.metric(record, ['cadence', 'averageCadence', 'cadenceSpm'], 'number').value,
         strideM: this.metric(record, ['stride', 'strideLength', 'averageStride', 'averageStrideLength'], 'number').value,
@@ -1232,6 +1262,12 @@ export class CorosCredentialBroker {
           tomorrowSchedule: 'queryTrainingSchedule',
           ...(toolNames.has('queryFitnessAssessmentOverview') ? { fitness: 'queryFitnessAssessmentOverview' } : {}),
         },
+      },
+      diagnostics: {
+        activityDetail: this.safeDiagnostic(detail),
+        laps: this.safeDiagnostic(lapsResult),
+        todaySchedule: todayResult ? this.safeDiagnostic(todayResult) : null,
+        tomorrowSchedule: tomorrowResult ? this.safeDiagnostic(tomorrowResult) : null,
       },
     };
   }

@@ -184,8 +184,8 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
     if (name === 'querySportRecords') result = { records: [{ startTimestamp: '1787870493000', labelId: 'hidden', sportType: 100, title: '稳态跑' }] };
     else if (name === 'getActivityDetail') result = { distance: 11.28, duration: 3600, movingPace: 342, averagePace: 345, averageHeartRate: 146, maxHeartRate: 158, cadence: 178, strideLength: 1.02, power: 197, elevationGain: 55, calories: 760, trainingLoad: 118, aerobicTrainingEffect: 3.1, anaerobicTrainingEffect: 0.4, trainingFocus: '有氧耐力', performance: '良好', perceivedEffort: '中等' };
     else if (name === 'queryActivityLapData') result = { laps: [
-      { lapIndex: 1, distance: 1, duration: 330, pace: 330, averageHeartRate: 140, power: 190, cadence: 177 },
-      { lapIndex: 2, distance: 1, duration: 345, pace: 345, averageHeartRate: 146, power: 197, cadence: 178 },
+      { lapIndex: 1, distance: 1, duration: 330, pace: 330, avgHr: 140, maxHr: 151, power: 190, cadence: 177 },
+      { lapIndex: 2, distance: 1, duration: 345, pace: 345, avgHr: 146, maxHr: 158, power: 197, cadence: 178 },
     ] };
     else if (name === 'queryTrainingLoadAssessment') result = { records: [{ date: '2026-08-28', shortTermLoad: 410, longTermLoad: 520, ratio: 0.79, status: '平衡' } ] };
     else if (name === 'queryRecoveryStatus') result = { recoveryPercent: 74, estimatedFullRecoveryAt: '2026-08-31T02:00:00Z' };
@@ -202,7 +202,10 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   assert.equal(bundle.reportDate, '2026-08-28');
   assert.equal(bundle.activity.distanceKm, 11.28);
   assert.equal(bundle.activity.trainingLoad, 118);
+  assert.equal(bundle.activity.maxHeartRateBpm, 158);
   assert.equal(bundle.laps.length, 2);
+  assert.equal(bundle.laps[0].heartRateBpm, 140);
+  assert.equal(bundle.laps[1].maxHeartRateBpm, 158);
   assert.equal(bundle.trainingContext.planAssociation, 'MATCHED');
   assert.equal(bundle.trainingContext.todaySchedule?.steps.length, 1);
   assert.equal(bundle.tomorrowSchedule?.title, '轻松跑');
@@ -213,4 +216,5 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   const serialized = JSON.stringify(bundle);
   assert.equal(serialized.includes('labelId'), false);
   assert.equal(serialized.includes('hidden'), false);
+  assert.equal(bundle.diagnostics?.laps.objectKeys.includes('avgHr'), true);
 });
