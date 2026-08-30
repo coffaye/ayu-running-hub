@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ayu-running.example/schemas/coros-daily-bundle-1.0.json",
+  "title": "Ayu COROS Daily Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "reportDate",
+    "retrievedAt",
+    "timezone",
+    "activity",
+    "laps",
+    "trainingContext",
+    "recentLoad",
+    "recovery",
+    "fitness",
+    "tomorrowSchedule",
+    "dataQuality",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "reportDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "retrievedAt": {
+      "type": "string"
+    },
+    "timezone": {
+      "const": "Asia/Shanghai"
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sportType": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "enum": [
+            100,
+            101,
+            102,
+            103,
+            null
+          ]
+        },
+        "distanceKm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "durationSec": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "laps": {
+      "type": "array"
+    },
+    "trainingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "todaySchedule",
+        "planAssociation",
+        "planAssociationEvidence"
+      ],
+      "properties": {
+        "todaySchedule": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sportType": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "estimatedDistanceKm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "estimatedDurationSec": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "plannedLoad": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "phase": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "durationSec": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "distanceKm": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "targetPaceSecPerKm": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "targetHeartRateBpm": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "sourceDisplayValue": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "planAssociation": {
+          "enum": [
+            "MATCHED",
+            "UNMATCHED",
+            "AMBIGUOUS"
+          ]
+        },
+        "planAssociationEvidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "recentLoad": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "recovery": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "fitness": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "tomorrowSchedule": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sportType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "estimatedDistanceKm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "estimatedDurationSec": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "plannedLoad": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "phase": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "durationSec": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "distanceKm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "targetPaceSecPerKm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "targetHeartRateBpm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "sourceDisplayValue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "dataQuality": {
+      "type": "object"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source",
+        "tools"
+      ],
+      "properties": {
+        "source": {
+          "const": "coros-mcp"
+        },
+        "tools": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

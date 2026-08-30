@@ -244,10 +244,14 @@
       "additionalProperties": false,
       "required": [
         "stage",
-        "bottleneck",
+        "primaryBottleneck",
+        "supportingEvidenceRefs",
+        "counterEvidenceRefs",
+        "unknowns",
+        "confidence",
         "applicableDomain",
         "marginalGain",
-        "minimalReversibleNextStep"
+        "nextStep"
       ],
       "properties": {
         "stage": {
@@ -256,7 +260,75 @@
             "null"
           ]
         },
-        "bottleneck": {
+        "primaryBottleneck": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supportingEvidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "planned.structuredWorkout",
+              "summary.ascentM",
+              "summary.averageHrBpm",
+              "summary.averagePaceSecPerKm",
+              "summary.cadenceNormalizedSpm",
+              "summary.displayDurationSec",
+              "summary.distanceM",
+              "summary.elapsedTimeSec",
+              "summary.lapSummary",
+              "summary.maxHrBpm",
+              "summary.movingTimeSec",
+              "summary.powerW",
+              "summary.recoveryHours",
+              "summary.recoveryPercent",
+              "summary.runningFitness",
+              "summary.splitSummary",
+              "summary.timerTimeSec",
+              "summary.trainingEffectAerobic",
+              "summary.trainingEffectAnaerobic",
+              "summary.trainingLoadPeak"
+            ]
+          }
+        },
+        "counterEvidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "planned.structuredWorkout",
+              "summary.ascentM",
+              "summary.averageHrBpm",
+              "summary.averagePaceSecPerKm",
+              "summary.cadenceNormalizedSpm",
+              "summary.displayDurationSec",
+              "summary.distanceM",
+              "summary.elapsedTimeSec",
+              "summary.lapSummary",
+              "summary.maxHrBpm",
+              "summary.movingTimeSec",
+              "summary.powerW",
+              "summary.recoveryHours",
+              "summary.recoveryPercent",
+              "summary.runningFitness",
+              "summary.splitSummary",
+              "summary.timerTimeSec",
+              "summary.trainingEffectAerobic",
+              "summary.trainingEffectAnaerobic",
+              "summary.trainingLoadPeak"
+            ]
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
           "type": [
             "string",
             "null"
@@ -274,7 +346,7 @@
             "null"
           ]
         },
-        "minimalReversibleNextStep": {
+        "nextStep": {
           "type": [
             "string",
             "null"

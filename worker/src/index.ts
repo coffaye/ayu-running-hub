@@ -231,14 +231,14 @@ const validateProbeBody = (body: Record<string, unknown>, auth: { requestId: str
     && body.runId === auth.runId;
 };
 
-const probe = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
+const corosCollector = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>, brokerPath: '/probe' | '/daily-bundle'): Promise<Response> => {
   if (!env.AYU_COLLECTOR_SHARED_SECRET) return jsonResponse({ error: 'Not found' }, 404);
   const auth = await verifyCollectorRequest(request, env.AYU_COLLECTOR_SHARED_SECRET, Math.floor(dependencies.now() / 1000));
   if (!auth) return internalUnauthorized();
   const body = parseObjectBody(auth.body);
   if (!body || !validateProbeBody(body, auth)) return jsonResponse({ error: 'COROS_PROBE_INVALID' }, 400);
   try {
-    return await dependencies.createCorosBrokerStub(env).fetch(new Request('https://coros-broker.internal/probe', {
+    return await dependencies.createCorosBrokerStub(env).fetch(new Request(`https://coros-broker.internal${brokerPath}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ runId: auth.runId, requestId: auth.requestId }),
@@ -259,7 +259,8 @@ export const createApp = (overrides: WorkerDependencies = {}) => {
     async fetch(request: Request, env: Env): Promise<Response> {
       const url = new URL(request.url);
       if (request.method === 'POST' && url.pathname === '/internal/coros/bootstrap') return bootstrap(request, env, dependencies);
-      if (request.method === 'POST' && url.pathname === '/internal/coros/probe') return probe(request, env, dependencies);
+      if (request.method === 'POST' && url.pathname === '/internal/coros/probe') return corosCollector(request, env, dependencies, '/probe');
+      if (request.method === 'POST' && url.pathname === '/internal/coros/daily-bundle') return corosCollector(request, env, dependencies, '/daily-bundle');
       const denied = await authenticate(request, env);
       if (denied) return denied;
       if (request.method === 'GET' && url.pathname === '/generate') {

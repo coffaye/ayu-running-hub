@@ -107,6 +107,40 @@ _VERDICT_SUGGESTION = re.compile(r"(?:建议|应该|可以尝试|下次|下一�
 _VERDICT_EXPLANATORY_LINK = re.compile(r"(?:因为|由于|因此|说明|表明|意味着|结合|同时|从而)")
 
 
+def _normalize_shadow_runner(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise SchemaValidationError("shadowRunner must be an object")
+    old_keys = {"stage", "bottleneck", "applicableDomain", "marginalGain", "minimalReversibleNextStep"}
+    new_keys = {"stage", "primaryBottleneck", "supportingEvidenceRefs", "counterEvidenceRefs", "unknowns", "confidence", "applicableDomain", "marginalGain", "nextStep"}
+    if set(value) == old_keys:
+        return {
+            "stage": value.get("stage"),
+            "primaryBottleneck": value.get("bottleneck"),
+            "supportingEvidenceRefs": [],
+            "counterEvidenceRefs": [],
+            "unknowns": [],
+            "confidence": None,
+            "applicableDomain": value.get("applicableDomain"),
+            "marginalGain": value.get("marginalGain"),
+            "nextStep": value.get("minimalReversibleNextStep"),
+        }
+    if set(value) == new_keys:
+        return dict(value)
+    raise SchemaValidationError("shadowRunner has unexpected fields")
+
+
+def _normalize_model_output(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise SchemaValidationError("DeepSeek output must be an object")
+    normalized = dict(value)
+    normalized["shadowRunner"] = _normalize_shadow_runner(value.get("shadowRunner"))
+    normalized.setdefault("bottleneck", normalized["shadowRunner"].get("primaryBottleneck"))
+    normalized.setdefault("applicableDomain", normalized["shadowRunner"].get("applicableDomain"))
+    normalized.setdefault("marginalGain", normalized["shadowRunner"].get("marginalGain"))
+    normalized.setdefault("minimalReversibleNextStep", normalized["shadowRunner"].get("nextStep"))
+    return normalized
+
+
 def _is_unknown_text(value: object) -> bool:
     if value is None:
         return True
@@ -414,24 +448,24 @@ class StructuredReport:
             _check_semantic_block(self.load, "load")
         if self.recovery is not None:
             _check_semantic_block(self.recovery, "recovery")
-        if not isinstance(self.shadowrunner, Mapping):
-            raise SchemaValidationError("shadowRunner must be an object")
-        required_shadow = {
-            "stage",
-            "bottleneck",
-            "applicableDomain",
-            "marginalGain",
-            "minimalReversibleNextStep",
-        }
-        if set(self.shadowrunner) != required_shadow:
-            raise SchemaValidationError("shadowRunner has unexpected fields")
-        for name, value in self.shadowrunner.items():
+        object.__setattr__(self, "shadowrunner", _normalize_shadow_runner(self.shadowrunner))
+        for name in ("stage", "primaryBottleneck", "confidence", "applicableDomain", "marginalGain", "nextStep"):
+            value = self.shadowrunner.get(name)
             _check_narrative(value, f"shadowRunner.{name}", nullable=True)
+        for ref_name in ("supportingEvidenceRefs", "counterEvidenceRefs"):
+            refs = self.shadowrunner.get(ref_name)
+            if not isinstance(refs, list) or any(ref not in ALLOWED_METRIC_REFS for ref in refs):
+                raise SchemaValidationError(f"shadowRunner.{ref_name} contains an unapproved metricRef")
+        unknowns = self.shadowrunner.get("unknowns")
+        if not isinstance(unknowns, list) or any(not isinstance(item, str) for item in unknowns):
+            raise SchemaValidationError("shadowRunner.unknowns must be an array of strings")
+        for index, value in enumerate(unknowns):
+            _check_narrative(value, f"shadowRunner.unknowns[{index}]")
         for top_name, nested_name in (
-            ("bottleneck", "bottleneck"),
+            ("bottleneck", "primaryBottleneck"),
             ("applicable_domain", "applicableDomain"),
             ("marginal_gain", "marginalGain"),
-            ("minimal_reversible_next_step", "minimalReversibleNextStep"),
+            ("minimal_reversible_next_step", "nextStep"),
         ):
             top_value = getattr(self, top_name)
             nested_value = self.shadowrunner.get(nested_name)
@@ -527,6 +561,7 @@ def validate_structured_report(value: Mapping[str, Any]) -> None:
 def validate_model_output(value: Mapping[str, Any]) -> None:
     """Validate the model-only semantic payload before identity injection."""
 
+    value = _normalize_model_output(value)
     schema = structured_report_json_schema(include_runtime_fields=False)
     if not isinstance(value, Mapping):
         raise SchemaValidationError("DeepSeek output must be an object")
@@ -557,6 +592,7 @@ def validate_model_output(value: Mapping[str, Any]) -> None:
 
 
 def report_from_model_output(value: Mapping[str, Any], context: DailyRunContext) -> StructuredReport:
+    value = _normalize_model_output(value)
     validate_model_output(value)
     report = StructuredReport(
         run_id=context.run_id,

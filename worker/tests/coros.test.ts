@@ -166,3 +166,51 @@ test('probe uses real MCP-shaped JSON/SSE responses, fixed read-only tools, and 
   assert.equal(requests.filter((method) => method === 'tools/call').length, 6);
   await assert.rejects(() => broker.probe('1787870493000', 'request-1'), (error: Error) => error.message === 'COROS_REQUEST_REPLAYED');
 });
+
+test('daily bundle normalizes detail, laps, dated load, plans, and excludes historical current recovery', async () => {
+  const sql = new FakeSql();
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/oauth2/token')) return Response.json({ error: 'unexpected refresh' }, { status: 400 });
+    const body = JSON.parse(String(init?.body)) as { method: string; params: { name?: string; arguments?: Record<string, unknown> } };
+    if (body.method === 'initialize') return Response.json({ jsonrpc: '2.0', id: 1, result: {} });
+    if (body.method === 'tools/list') return Response.json({ jsonrpc: '2.0', id: 2, result: { tools: [
+      { name: 'querySportRecords' }, { name: 'getActivityDetail' }, { name: 'queryActivityLapData' },
+      { name: 'queryTrainingLoadAssessment' }, { name: 'queryRecoveryStatus' }, { name: 'queryTrainingSchedule' },
+      { name: 'queryFitnessAssessmentOverview' },
+    ] } });
+    const name = body.params.name;
+    const args = body.params.arguments ?? {};
+    let result: unknown;
+    if (name === 'querySportRecords') result = { records: [{ startTimestamp: '1787870493000', labelId: 'hidden', sportType: 100, title: '稳态跑' }] };
+    else if (name === 'getActivityDetail') result = { distance: 11.28, duration: 3600, movingPace: 342, averagePace: 345, averageHeartRate: 146, maxHeartRate: 158, cadence: 178, strideLength: 1.02, power: 197, elevationGain: 55, calories: 760, trainingLoad: 118, aerobicTrainingEffect: 3.1, anaerobicTrainingEffect: 0.4, trainingFocus: '有氧耐力', performance: '良好', perceivedEffort: '中等' };
+    else if (name === 'queryActivityLapData') result = { laps: [
+      { lapIndex: 1, distance: 1, duration: 330, pace: 330, averageHeartRate: 140, power: 190, cadence: 177 },
+      { lapIndex: 2, distance: 1, duration: 345, pace: 345, averageHeartRate: 146, power: 197, cadence: 178 },
+    ] };
+    else if (name === 'queryTrainingLoadAssessment') result = { records: [{ date: '2026-08-28', shortTermLoad: 410, longTermLoad: 520, ratio: 0.79, status: '平衡' } ] };
+    else if (name === 'queryRecoveryStatus') result = { recoveryPercent: 74, estimatedFullRecoveryAt: '2026-08-31T02:00:00Z' };
+    else if (name === 'queryTrainingSchedule' && args.startDate === '20260828') result = { schedules: [{ date: '20260828', title: '稳态跑', sportType: 'running', plannedDistance: 11.3, plannedDuration: 3600, plannedLoad: 120, steps: [{ title: '主训练', duration: 3600 }] }] };
+    else if (name === 'queryTrainingSchedule') result = { schedules: [{ date: '20260829', title: '轻松跑', sportType: 'running', plannedDistance: 8, plannedDuration: 2700, plannedLoad: 70 }] };
+    else if (name === 'queryFitnessAssessmentOverview') result = { runningFitness: 62.5 };
+    else result = {};
+    return Response.json({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
+  }) as typeof fetch;
+  const broker = new CorosCredentialBroker(stateFor(sql), { COROS_CREDENTIAL_KEK: key(7) }, { fetcher, now: () => 1788000000 });
+  await broker.bootstrap({ ...bootstrapBody(), accessExpiresAt: 9000000000 });
+  const bundle = await broker.dailyBundle('1787870493000', 'bundle-1');
+  assert.equal(bundle.schemaVersion, '1.0');
+  assert.equal(bundle.reportDate, '2026-08-28');
+  assert.equal(bundle.activity.distanceKm, 11.28);
+  assert.equal(bundle.activity.trainingLoad, 118);
+  assert.equal(bundle.laps.length, 2);
+  assert.equal(bundle.trainingContext.planAssociation, 'MATCHED');
+  assert.equal(bundle.trainingContext.todaySchedule?.steps.length, 1);
+  assert.equal(bundle.tomorrowSchedule?.title, '轻松跑');
+  assert.equal(bundle.recentLoad?.reportDate, '2026-08-28');
+  assert.equal(bundle.recovery?.reportDateAligned, false);
+  assert.equal(bundle.recovery?.recoveryPercent, null);
+  assert.equal(bundle.fitness?.runningFitness, 62.5);
+  const serialized = JSON.stringify(bundle);
+  assert.equal(serialized.includes('labelId'), false);
+  assert.equal(serialized.includes('hidden'), false);
+});

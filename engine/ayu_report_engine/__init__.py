@@ -7,6 +7,7 @@ data, and renders a deterministic report without exposing provider payloads.
 """
 
 from .analysis import FixtureAnalyzer, ReportAnalyzer
+from .bundle import context_from_coros_bundle, coros_daily_bundle_json_schema, load_coros_bundle, validate_coros_bundle
 from .context import DailyRunContext, SourceEvidence
 from .deepseek import (
     AnalysisResult,
@@ -49,6 +50,10 @@ __all__ = [
     "DataMismatchError",
     "DataSourceError",
     "FixtureAnalyzer",
+    "context_from_coros_bundle",
+    "coros_daily_bundle_json_schema",
+    "load_coros_bundle",
+    "validate_coros_bundle",
     "IdentityError",
     "ReportAnalyzer",
     "SchemaValidationError",

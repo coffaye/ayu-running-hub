@@ -97,7 +97,7 @@ class SemanticGroundingTests(unittest.TestCase):
         self.assertIsNone(report.completion["score"])
         self.assertIsNone(report.completion["status"])
         self.assertIsNone(report.completion["trainingType"])
-        self.assertEqual(report.prompt_version, "ayu-daily-v6")
+        self.assertEqual(report.prompt_version, "ayu-daily-v7")
 
     def test_unsupported_claims_are_rejected(self) -> None:
         cases = {

@@ -155,6 +155,13 @@ def context_for_model(context: DailyRunContext) -> dict[str, Any]:
         "recoveryPercent": context.recovery_percent,
         "recoveryHours": context.recovery_hours,
         "runningFitness": context.running_fitness,
+        "recentLoad": dict(context.recent_load) if context.recent_load is not None else None,
+        "fitness": dict(context.fitness) if context.fitness is not None else None,
+        "todaySchedule": dict(context.today_schedule) if context.today_schedule is not None else None,
+        "tomorrowSchedule": dict(context.tomorrow_schedule) if context.tomorrow_schedule is not None else None,
+        "planAssociation": context.plan_association,
+        "planAssociationEvidence": list(context.plan_association_evidence),
+        "dataQuality": dict(context.data_quality),
     }
 
 

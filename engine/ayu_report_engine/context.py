@@ -135,6 +135,15 @@ class DailyRunContext:
     engine_commit: str | None = field(default_factory=runtime_engine_commit)
     prompt_version: str = PROMPT_VERSION
     renderer_version: str = RENDERER_VERSION
+    recent_load: Mapping[str, Any] | None = None
+    fitness: Mapping[str, Any] | None = None
+    today_schedule: Mapping[str, Any] | None = None
+    tomorrow_schedule: Mapping[str, Any] | None = None
+    plan_association: str = "UNMATCHED"
+    plan_association_evidence: tuple[str, ...] = field(default_factory=tuple)
+    data_quality: Mapping[str, Any] = field(default_factory=dict)
+    bundle_provenance: Mapping[str, Any] | None = None
+    bundle_schema_version: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "run_id", normalize_run_id(self.run_id))
@@ -218,6 +227,10 @@ class DailyRunContext:
             raise SchemaValidationError("normalized cadence requires raw cadence provenance")
         if self.structured_workout is None and self.workout_intent != "unknown":
             raise SchemaValidationError("missing structured workout requires workoutIntent=unknown")
+        if self.plan_association not in {"MATCHED", "UNMATCHED", "AMBIGUOUS"}:
+            raise SchemaValidationError("planAssociation must be MATCHED/UNMATCHED/AMBIGUOUS")
+        if any(not isinstance(value, str) for value in self.plan_association_evidence):
+            raise SchemaValidationError("planAssociationEvidence must contain strings")
 
     @property
     def display_duration_sec(self) -> float | None:
@@ -295,6 +308,15 @@ class DailyRunContext:
         data["evidence"] = [item.to_dict() for item in self.evidence]
         data["laps"] = list(self.laps) if self.laps is not None else None
         data["splits"] = list(self.splits) if self.splits is not None else None
+        data["recentLoad"] = data.pop("recent_load")
+        data["fitness"] = data.pop("fitness")
+        data["todaySchedule"] = data.pop("today_schedule")
+        data["tomorrowSchedule"] = data.pop("tomorrow_schedule")
+        data["planAssociation"] = data.pop("plan_association")
+        data["planAssociationEvidence"] = list(data.pop("plan_association_evidence"))
+        data["dataQuality"] = data.pop("data_quality")
+        data["bundleProvenance"] = data.pop("bundle_provenance")
+        data["bundleSchemaVersion"] = data.pop("bundle_schema_version")
         return data
 
     def to_json(self) -> str:

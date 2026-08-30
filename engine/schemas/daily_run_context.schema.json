@@ -277,6 +277,58 @@
       "items": {
         "type": "object"
       }
+    },
+    "recentLoad": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "fitness": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "todaySchedule": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "tomorrowSchedule": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "planAssociation": {
+      "enum": [
+        "MATCHED",
+        "UNMATCHED",
+        "AMBIGUOUS"
+      ]
+    },
+    "planAssociationEvidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dataQuality": {
+      "type": "object"
+    },
+    "bundleProvenance": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "bundleSchemaVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   }
 }

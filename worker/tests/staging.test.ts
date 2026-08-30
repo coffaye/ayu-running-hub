@@ -371,3 +371,38 @@ test('Phase 6 collector HMAC rejects wrong/stale requests and forwards only sign
   assert.equal(accepted.status, 200);
   assert.equal(forwarded, 1);
 });
+
+test('Phase 6 daily-bundle collector uses the same signed identity contract', async () => {
+  let forwardedPath = '';
+  let forwardedBody = '';
+  const brokerStub = {
+    fetch: async (request: Request) => {
+      forwardedPath = new URL(request.url).pathname;
+      forwardedBody = await request.text();
+      return Response.json({ schemaVersion: '1.0', runId: '1787870493000' });
+    },
+  };
+  const nowMs = 1_000_000;
+  const secret = 'collector-secret';
+  const testApp = createApp({ createCorosBrokerStub: () => brokerStub, now: () => nowMs });
+  const timestamp = Math.floor(nowMs / 1000);
+  const requestId = 'bundle-request-1';
+  const runId = '1787870493000';
+  const body = JSON.stringify({ requestId, runId });
+  const payload = await collectorSigningPayload(timestamp, requestId, runId, 'POST', '/internal/coros/daily-bundle', body);
+  const signature = await signCollectorPayload(secret, payload);
+  const response = await testApp.fetch(new Request('https://staging.example/internal/coros/daily-bundle', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-ayu-timestamp': String(timestamp),
+      'x-ayu-request-id': requestId,
+      'x-ayu-run-id': runId,
+      'x-ayu-signature': signature,
+    },
+    body,
+  }), { ...authEnv, AYU_COLLECTOR_SHARED_SECRET: secret });
+  assert.equal(response.status, 200);
+  assert.equal(forwardedPath, '/daily-bundle');
+  assert.deepEqual(JSON.parse(forwardedBody), JSON.parse(body));
+});
