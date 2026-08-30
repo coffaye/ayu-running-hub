@@ -62,6 +62,7 @@ def main() -> int:
                 "status": "failed",
                 "category": exc.category,
                 "httpStatus": exc.status_code,
+                "message": str(exc),
             })
     _write_json(args.output_dir / "trial-results.json", {
         "schemaVersion": "phase6-preview-v1",
