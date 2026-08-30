@@ -327,12 +327,18 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
             raise SchemaValidationError("physiologyCost lacks supporting physiological facts")
 
 
-def validate_verdict(verdict: str) -> None:
-    """Keep the Hero verdict a short, complete conclusion rather than a paragraph."""
+def verdict_visible_character_count(verdict: str) -> int:
+    """Return the deterministic character count enforced for Hero verdicts."""
 
     if not isinstance(verdict, str):
         raise SchemaValidationError("verdict must be a string")
-    visible_length = len(verdict)
+    return len(verdict)
+
+
+def validate_verdict(verdict: str) -> None:
+    """Keep the Hero verdict a short, complete conclusion rather than a paragraph."""
+
+    visible_length = verdict_visible_character_count(verdict)
     if visible_length < 10 or visible_length > 22:
         raise SchemaValidationError("verdict must contain 10-22 visible characters")
     if "\n" in verdict or "\r" in verdict:

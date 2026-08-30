@@ -28,6 +28,7 @@ from .report import (
     report_from_model_output,
     validate_semantic_grounding,
     validate_verdict,
+    verdict_visible_character_count,
     validate_model_output,
     validate_structured_report,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "report_from_model_output",
     "validate_semantic_grounding",
     "validate_verdict",
+    "verdict_visible_character_count",
     "validate_model_output",
     "render_html",
     "validate_structured_report",

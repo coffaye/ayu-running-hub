@@ -8,7 +8,7 @@ import unittest
 
 from ayu_report_engine.context import DailyRunContext
 from ayu_report_engine.errors import SchemaValidationError
-from ayu_report_engine.report import report_from_model_output, validate_verdict
+from ayu_report_engine.report import report_from_model_output, validate_verdict, verdict_visible_character_count
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -193,6 +193,17 @@ class VerdictTitleTests(unittest.TestCase):
             with self.subTest(verdict=verdict):
                 with self.assertRaises(SchemaValidationError):
                     validate_verdict(verdict)
+
+    def test_verdict_visible_character_count_matches_validator_examples(self) -> None:
+        verdicts = {
+            "一小时有氧跑，配速稳": 10,
+            "一小时有氧跑稳稳完成": 10,
+            "一小时有氧跑按计划收尾": 11,
+        }
+        for verdict, expected in verdicts.items():
+            with self.subTest(verdict=verdict):
+                self.assertEqual(verdict_visible_character_count(verdict), expected)
+                validate_verdict(verdict)
 
 
 if __name__ == "__main__":

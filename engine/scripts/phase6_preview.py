@@ -11,6 +11,7 @@ import sys
 from ayu_report_engine.bundle import context_from_coros_bundle, load_coros_bundle
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig, DeepSeekError
 from ayu_report_engine.render import render_html
+from ayu_report_engine.report import verdict_visible_character_count
 from ayu_report_engine.version import PROMPT_VERSION, RENDERER_VERSION
 
 
@@ -66,7 +67,7 @@ def main() -> int:
                 "totalTokens": result.metadata.total_tokens,
                 "retryCount": result.metadata.retry_count,
                 "verdict": result.report.verdict,
-                "visibleChars": len(result.report.verdict + "".join(str(item.get("interpretation") or "") for item in result.report.evidence)),
+                "verdictVisibleChars": verdict_visible_character_count(result.report.verdict),
                 "semanticGate": "PASS",
             })
         except DeepSeekError as exc:
