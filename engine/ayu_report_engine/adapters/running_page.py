@@ -148,23 +148,6 @@ def _read_sqlite(path: Path, run_id: str) -> dict[str, Any] | None:
             pass
 
 
-def _sqlite_identity_exists(path: Path, run_id: str) -> bool:
-    if not path.exists():
-        raise DataSourceError(f"SQLite source does not exist: {path.name}")
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(path)
-        row = connection.execute(
-            "SELECT 1 FROM activities WHERE run_id = ? LIMIT 1", (int(run_id),)
-        ).fetchone()
-        return row is not None
-    except (OSError, sqlite3.Error, OverflowError) as exc:
-        raise DataSourceError(f"cannot read activities SQLite: {path.name}") from exc
-    finally:
-        if connection is not None:
-            connection.close()
-
-
 def _assert_consistent(json_row: Mapping[str, Any], sqlite_row: Mapping[str, Any]) -> None:
     comparisons = {
         "run_id": (json_row.get("run_id"), sqlite_row.get("run_id")),
@@ -235,35 +218,3 @@ def load_running_page_context(
     if json_error is not None:
         raise json_error
     raise DataSourceError(f"run_id not found in running_page sources: {normalized_id}")
-
-
-def running_page_identity_exists(
-    json_path: str | Path,
-    sqlite_path: str | Path | None,
-    run_id: object,
-) -> bool:
-    """Check only whether a run identity exists; never build training facts.
-
-    Production COROS reports use this as an entry-point guard. The public
-    running_page data is deliberately not allowed to become the report's
-    training-fact source.
-    """
-
-    normalized_id = normalize_run_id(run_id)
-    json_source = Path(json_path)
-    sqlite_source = Path(sqlite_path) if sqlite_path is not None else None
-    json_error: DataSourceError | None = None
-    try:
-        rows = _read_json(json_source)
-        if _find_json_row(rows, normalized_id) is not None:
-            return True
-    except DataSourceError as exc:
-        json_error = exc
-
-    if sqlite_source is not None and sqlite_source.exists() and _sqlite_identity_exists(sqlite_source, normalized_id):
-        return True
-    if json_error is not None and (sqlite_source is None or not sqlite_source.exists()):
-        raise json_error
-    if not json_source.exists() and (sqlite_source is None or not sqlite_source.exists()):
-        raise DataSourceError("running_page identity sources are missing")
-    return False
