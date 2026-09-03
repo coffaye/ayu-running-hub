@@ -9,6 +9,11 @@ data, and renders a deterministic report without exposing provider payloads.
 from .analysis import FixtureAnalyzer, ReportAnalyzer
 from .bundle import context_from_coros_bundle, coros_daily_bundle_json_schema, load_coros_bundle, validate_coros_bundle
 from .context import DailyRunContext, SourceEvidence
+from .coros_collector_client import (
+    CollectorConfig,
+    CollectorError,
+    fetch_coros_daily_bundle,
+)
 from .deepseek import (
     AnalysisResult,
     AnalyzerMetadata,
@@ -48,6 +53,8 @@ __all__ = [
     "MissingAPIKeyError",
     "AnalysisResult",
     "AnalyzerMetadata",
+    "CollectorConfig",
+    "CollectorError",
     "DataMismatchError",
     "DataSourceError",
     "FixtureAnalyzer",
@@ -55,6 +62,7 @@ __all__ = [
     "coros_daily_bundle_json_schema",
     "load_coros_bundle",
     "validate_coros_bundle",
+    "fetch_coros_daily_bundle",
     "IdentityError",
     "ReportAnalyzer",
     "SchemaValidationError",

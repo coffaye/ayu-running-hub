@@ -16,7 +16,7 @@ if str(ENGINE_ROOT) not in sys.path:
 if str(HUB_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(HUB_ROOT / "scripts"))
 
-from ayu_report_engine.adapters.running_page import load_running_page_context
+from ayu_report_engine.adapters.running_page import load_running_page_context, running_page_identity_exists
 from ayu_report_engine.analysis import FixtureAnalyzer
 from ayu_report_engine.deepseek import DeepSeekConfig
 from generate_report import manifest_entry, replace_report_and_manifest
@@ -48,6 +48,24 @@ class StagingBuildTests(unittest.TestCase):
         self.assertEqual(entry["hubVersion"], "0.4.0")
         self.assertEqual(entry["engineCommit"], "hub-test-commit")
         self.assertEqual(entry["reasoningEffort"], "low")
+
+    def test_running_page_identity_guard_does_not_require_training_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            activities = root / "activities.json"
+            activities.write_text(json.dumps([{"run_id": 1900000000000}], ensure_ascii=False), encoding="utf-8")
+            self.assertTrue(running_page_identity_exists(activities, None, "1900000000000"))
+            self.assertFalse(running_page_identity_exists(activities, None, "1900000000001"))
+
+    def test_production_workflow_uses_coros_bundle_and_master_publication(self) -> None:
+        workflow = (HUB_ROOT / ".github" / "workflows" / "generate-report.yml").read_text(encoding="utf-8")
+        generator = (HUB_ROOT / "scripts" / "generate_report.py").read_text(encoding="utf-8")
+        self.assertNotIn("load_running_page_context", generator)
+        self.assertIn("context_from_coros_bundle", generator)
+        self.assertIn("PHASE6_COLLECTOR_URL", workflow)
+        self.assertIn("AYU_COLLECTOR_SHARED_SECRET", workflow)
+        self.assertIn("DEEPSEEK_TIMEOUT_SECONDS: ${{ vars.DEEPSEEK_TIMEOUT_SECONDS || '90' }}", workflow)
+        self.assertIn("RUNNING_PAGE_BRANCH: master", workflow)
 
     def test_atomic_replace_updates_html_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
