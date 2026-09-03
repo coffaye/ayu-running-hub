@@ -9,6 +9,7 @@ data, and renders a deterministic report without exposing provider payloads.
 from .analysis import FixtureAnalyzer, ReportAnalyzer
 from .bundle import context_from_coros_bundle, coros_daily_bundle_json_schema, load_coros_bundle, validate_coros_bundle
 from .context import DailyRunContext, SourceEvidence
+from .completion import CompletionEvaluation, completion_evaluation_eligibility, has_completion_purpose_evidence
 from .deepseek import (
     AnalysisResult,
     AnalyzerMetadata,
@@ -42,6 +43,9 @@ from .schema import (
 
 __all__ = [
     "DailyRunContext",
+    "CompletionEvaluation",
+    "completion_evaluation_eligibility",
+    "has_completion_purpose_evidence",
     "DeepSeekAnalyzer",
     "DeepSeekConfig",
     "DeepSeekError",

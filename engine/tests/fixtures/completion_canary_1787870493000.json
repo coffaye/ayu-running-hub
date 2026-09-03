@@ -1,0 +1,33 @@
+{
+  "runId": "1787870493000",
+  "localDate": "2026-08-28",
+  "startDatetimeLocal": "2026-08-28T06:30:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "timezoneSource": "source",
+  "sport": "running",
+  "distanceM": 11280,
+  "movingTimeSec": 3600,
+  "displayDurationSource": "moving_time",
+  "structuredWorkout": {
+    "name": "一小时有氧训练",
+    "steps": [
+      {"durationSec": 3600, "targetPaceSecPerKm": 360}
+    ]
+  },
+  "workoutIntent": "scheduled",
+  "todaySchedule": {
+    "name": "一小时有氧训练",
+    "sportType": "running",
+    "estimatedDistanceKm": 10,
+    "estimatedDurationSec": 3600,
+    "plannedLoad": 100,
+    "steps": [
+      {"durationSec": 3600, "targetPaceSecPerKm": 360}
+    ]
+  },
+  "planAssociation": "MATCHED",
+  "planAssociationEvidence": ["same-day scheduled workout facts"],
+  "laps": [
+    {"index": 1, "distanceM": 11280, "timerTimeSec": 3600}
+  ]
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -34,8 +35,8 @@ def fit_context():
 def valid_model_output() -> dict:
     return {
         "verdict": "结构化课表完成情况需要结合实测证据判断",
-        "trainingPurpose": "结构化课表",
-        "completion": {"status": "unknown", "trainingType": "structured", "score": None},
+        "trainingPurpose": None,
+        "completion": {"status": None, "trainingType": None, "score": None},
         "evidence": [
             {"metricRef": "summary.averageHrBpm", "interpretation": "输入提供了平均心率。"},
             {"metricRef": "summary.trainingLoadPeak", "interpretation": "输入提供了设备训练负荷。"},
@@ -60,6 +61,19 @@ def valid_model_output() -> dict:
         "nextTrainingSuggestion": None,
         "uncertainty": ["未提供主观用力感"],
     }
+
+
+def eligible_fit_context():
+    return replace(
+        fit_context(),
+        plan_association="MATCHED",
+        today_schedule={
+            "name": "一小时有氧训练",
+            "estimatedDurationSec": 3600,
+            "estimatedDistanceKm": 10,
+            "steps": [{"durationSec": 3600}],
+        },
+    )
 
 
 class MockTransport:
@@ -127,6 +141,7 @@ class DeepSeekTests(unittest.TestCase):
         input_data = json.loads(payload["input"])
         self.assertNotIn("runId", input_data)
         self.assertIsNone(input_data["cadenceNormalizedSpm"])
+        self.assertFalse(input_data["completionEvaluation"]["eligible"])
         self.assertNotIn("cadenceRawValue", input_data)
         self.assertNotIn("summary_polyline", payload["input"])
         self.assertNotIn("Authorization", json.dumps(payload))
@@ -161,6 +176,23 @@ class DeepSeekTests(unittest.TestCase):
         self.assertEqual(len(transport.calls), 2)
         self.assertEqual(result.metadata.retry_count, 1)
         self.assertIn("semantic grounding", transport.calls[1][2]["instructions"])
+
+    def test_eligible_null_completion_gets_completion_contract_retry(self):
+        corrected = {
+            **valid_model_output(),
+            "trainingPurpose": "有氧训练",
+            "completion": {"status": "完成", "trainingType": "有氧", "score": 8.0},
+        }
+        transport = MockTransport([
+            completed_response(),
+            completed_response(corrected),
+        ])
+        result = DeepSeekAnalyzer(self.config(), transport=transport).analyze_with_metadata(
+            eligible_fit_context()
+        )
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(result.report.completion["score"], 8.0)
+        self.assertIn("completionEvaluation.eligible=true", transport.calls[1][2]["instructions"])
 
     def test_missing_key_is_explicit(self):
         analyzer = DeepSeekAnalyzer(self.config(api_key=None), transport=MockTransport([]))

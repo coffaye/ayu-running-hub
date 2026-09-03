@@ -9,7 +9,10 @@ from pathlib import Path
 import sys
 
 from ayu_report_engine.bundle import context_from_coros_bundle, load_coros_bundle
+from ayu_report_engine.completion import completion_evaluation_eligibility
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig, DeepSeekError
+from ayu_report_engine.display import build_report_view_model
+from ayu_report_engine.errors import SchemaValidationError
 from ayu_report_engine.render import render_html
 from ayu_report_engine.report import verdict_visible_character_count
 from ayu_report_engine.version import PROMPT_VERSION, RENDERER_VERSION
@@ -17,17 +20,6 @@ from ayu_report_engine.version import PROMPT_VERSION, RENDERER_VERSION
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _selection_quality(report: object) -> tuple[int, int, int, int, int]:
-    bottleneck = str(getattr(report, "bottleneck", "") or "").strip()
-    next_step = str(getattr(report, "minimal_reversible_next_step", "") or "").strip()
-    physiology = str(getattr(report, "physiology_cost", "") or "").strip()
-    evidence = tuple(getattr(report, "evidence", ()) or ())
-    visible = len(str(getattr(report, "verdict", "") or "") + physiology + bottleneck + next_step)
-    meaningful_bottleneck = bool(bottleneck and "unknown" not in bottleneck.lower() and "无法判断" not in bottleneck)
-    grounded_signal = any(marker in bottleneck for marker in ("心率", "配速", "负荷", "功率", "步频"))
-    return int(meaningful_bottleneck), int(bool(next_step)), int(grounded_signal), len(evidence), visible
 
 
 def main() -> int:
@@ -50,6 +42,19 @@ def main() -> int:
         try:
             result = DeepSeekAnalyzer(config).analyze_with_metadata(context)
             html = render_html(result.report, context)
+            evaluation = completion_evaluation_eligibility(context)
+            if not evaluation.eligible:
+                raise SchemaValidationError(
+                    "staging completion contract is ineligible for the canary context"
+                )
+            completion = result.report.completion
+            score = completion.get("score")
+            if score is None or not isinstance(completion.get("status"), str) or not completion.get("status").strip():
+                raise SchemaValidationError("staging completion contract has no score or status")
+            if not isinstance(completion.get("trainingType"), str) or not completion.get("trainingType").strip():
+                raise SchemaValidationError("staging completion contract has no training type")
+            if not build_report_view_model(result.report, context).get("score"):
+                raise SchemaValidationError("staging completion score view is missing")
             trial_path = args.output_dir / f"trial-{trial}.html"
             trial_path.write_text(html, encoding="utf-8")
             successful_reports.append((trial, result.report, html))
@@ -66,16 +71,21 @@ def main() -> int:
                 "reasoningTokens": result.metadata.reasoning_tokens,
                 "totalTokens": result.metadata.total_tokens,
                 "retryCount": result.metadata.retry_count,
+                "completionEligible": evaluation.eligible,
+                "completionScore": score,
+                "completionStatus": completion.get("status"),
+                "completionTrainingType": completion.get("trainingType"),
                 "verdict": result.report.verdict,
                 "verdictVisibleChars": verdict_visible_character_count(result.report.verdict),
                 "semanticGate": "PASS",
             })
-        except DeepSeekError as exc:
+        except (DeepSeekError, SchemaValidationError) as exc:
+            category = exc.category if isinstance(exc, DeepSeekError) else "validation"
             trial_results.append({
                 "trial": trial,
                 "effort": effort,
                 "status": "failed",
-                "category": exc.category,
+                "category": category,
                 "httpStatus": exc.status_code,
                 "message": str(exc),
             })
@@ -103,21 +113,15 @@ def main() -> int:
         _write_json(args.output_dir / "preview-status.json", failed)
         print(json.dumps(failed, ensure_ascii=False))
         return 2
-    trial, report, html = max(successful_reports, key=lambda item: _selection_quality(item[1]))
-    selection_quality = _selection_quality(report)
+    # The three staging trials are independent contract checks. They are not
+    # candidates for score averaging, voting, or quality maximization.
+    trial, report, html = successful_reports[0]
     canonical = args.output_dir / f"ayu_running_daily_{bundle['reportDate']}.html"
     canonical.write_text(html, encoding="utf-8")
     _write_json(args.output_dir / "selected-trial.json", {
         "trial": trial,
         "analysisSource": "deepseek",
-        "status": "selected_best_of_three_validated_trials",
-        "selectionQuality": {
-            "meaningfulBottleneck": bool(selection_quality[0]),
-            "reversibleNextStep": bool(selection_quality[1]),
-            "groundedSignal": bool(selection_quality[2]),
-            "evidenceCount": selection_quality[3],
-            "coreVisibleChars": selection_quality[4],
-        },
+        "status": "first_of_three_independently_validated_trials",
     })
     _write_json(args.output_dir / "preview-status.json", {
         "schemaVersion": "phase6-preview-v1",

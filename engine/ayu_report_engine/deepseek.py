@@ -14,6 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .context import DailyRunContext
+from .completion import completion_evaluation_eligibility
 from .errors import EngineError, SchemaValidationError
 from .metrics import ALLOWED_METRIC_REFS, context_for_model, resolve_metric_ref
 from .prompt import build_instructions
@@ -325,6 +326,9 @@ def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
         marker in message
         for marker in (
             "requires a structured workout",
+            "requires eligible completion evidence",
+            "required for eligible completion evidence",
+            "requires a matched plan association",
             "unsupported heart-rate claim",
             "unsupported stability claim",
             "unsupported load claim",
@@ -517,6 +521,15 @@ class DeepSeekAnalyzer:
                     ):
                         semantic_retry_count += 1
                         retry_count += 1
+                        completion_evaluation = completion_evaluation_eligibility(context)
+                        completion_contract = (
+                            "当前 completionEvaluation.eligible=true；请填写有意义的 completion.status、"
+                            "completion.trainingType，以及 0–10 的有限数值 completion.score；"
+                            "不要把这些字段留为 null。"
+                            if completion_evaluation.eligible
+                            else "当前 completionEvaluation.eligible=false；completion.score 必须保持 null，"
+                            "无法确认的 completion 与 trainingPurpose 保持 null 或 unknown。"
+                        )
                         payload["instructions"] = (
                             str(payload["instructions"])
                             + "\n上一次输出未通过本地 semantic grounding。请重新完整输出 JSON：只陈述输入中明确存在的事实；"
@@ -524,6 +537,7 @@ class DeepSeekAnalyzer:
                             "没有可靠的结构化训练、心率、分圈、负荷或恢复锚点时，相关字段必须保持 null/unknown；"
                             "不要在任何用户文案中写数字、literal null 或 JSON/camelCase 字段名；"
                             "verdict 必须是 10–22 个可见字符的一句短结论。"
+                            + completion_contract
                         )
                         continue
                     raise DeepSeekError(

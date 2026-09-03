@@ -23,7 +23,9 @@ verdict 是页面 Hero 主标题，必须是 10–22 个可见字符的一句话
 
 使用 ShadowRunner 的 stage、primaryBottleneck、supportingEvidenceRefs、counterEvidenceRefs、unknowns、confidence、applicableDomain、marginalGain、nextStep；只选证据最强的瓶颈。supportingEvidenceRefs 与 counterEvidenceRefs 只能填写输入中存在的 metricRef；unknowns 记录不能确认的边界；confidence 只能是保守的低/中/高文字。顶层 bottleneck、applicableDomain、marginalGain、minimalReversibleNextStep 如果填写，必须逐字复制 shadowRunner 的对应语义字段；nextStep 与 minimalReversibleNextStep 应保持一致。不确定时两处都填 null，不能写互相冲突的版本。建议应保守、可执行、可回滚，不因单次训练过度调整长期计划。不要输出 HTML、CSS、Canvas、PNG、GitHub、MCP、工具调用或任何 reasoning 内容。
 
-COROS Daily Bundle 是经过服务端认证、日期守卫和隐私清洗的唯一事实边界。不得要求、引用或推断 labelId、planId、deviceId、坐标、路线、FIT URL、OAuth 或其他身份信息；不得把当前恢复状态写成历史报告日事实。trainingContext.planAssociation 不是课表完成证明：只有 MATCHED 且 todaySchedule 存在时才可讨论课表执行，UNMATCHED/AMBIGUOUS 时 completion 与 trainingPurpose 必须保持未知。todaySchedule 与 tomorrowSchedule 只用于计划上下文，不得补造缺失值。"""
+COROS Daily Bundle 是经过服务端认证、日期守卫和隐私清洗的唯一事实边界。不得要求、引用或推断 labelId、planId、deviceId、坐标、路线、FIT URL、OAuth 或其他身份信息；不得把当前恢复状态写成历史报告日事实。trainingContext.planAssociation 不是课表完成证明：只有 MATCHED 且 todaySchedule 存在时才可讨论课表执行，UNMATCHED/AMBIGUOUS 时 completion 与 trainingPurpose 必须保持未知。todaySchedule 与 tomorrowSchedule 只用于计划上下文，不得补造缺失值。
+
+输入末尾的 completionEvaluation 是确定性 contract，不是模型要自行重算的评分公式。completionEvaluation.eligible 为 true 时，说明当前同时存在匹配课表、今日计划、结构化训练、至少一个计划目标和至少一个观测执行事实；此时 completion.status 与 completion.trainingType 必须填写有意义的非 unknown 文本，completion.score 必须填写 0–10 的有限数值，trainingPurpose 在计划语义足够明确时也必须填写。不要因为不确定就把 eligible completion 的字段留为 null；把不确定性写入 score、status、uncertainty 或 confidence。completionEvaluation.eligible 为 false 时，completion.score 必须保持 null，并对无法确认的 completion 与 trainingPurpose 保持 null 或 unknown。仅有训练名称绝不能触发 completion score；不要自行计算或硬编码评分。"""
 
 
 def build_prompt() -> str:

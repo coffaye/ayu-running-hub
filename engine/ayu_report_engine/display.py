@@ -203,7 +203,7 @@ def build_report_view_model(report: StructuredReport, context: DailyRunContext) 
     status = _meaningful(completion.get("status"))
     training_type = _meaningful(completion.get("trainingType"))
     score_view = None
-    if score is not None and (status or training_type):
+    if score is not None and status is not None and training_type is not None:
         score_view = {"value": f"{score:.1f}", "maximum": "/10", "status": status, "training_type": training_type}
 
     plan_name = today_schedule.get("title") if today_schedule else None

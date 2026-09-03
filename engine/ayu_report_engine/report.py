@@ -10,6 +10,7 @@ import re
 from typing import Any, Mapping
 
 from .context import DailyRunContext
+from .completion import completion_evaluation_eligibility, has_completion_purpose_evidence
 from .errors import SchemaValidationError
 from .identity import normalize_run_id
 from .metrics import ALLOWED_METRIC_REFS, validate_metric_refs
@@ -256,8 +257,10 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
     value to prove more than the source can establish.
     """
 
+    completion_evaluation = completion_evaluation_eligibility(context)
+    completion_score = report.completion.get("score")
+
     if context.structured_workout is None:
-        completion_score = report.completion.get("score")
         if completion_score is not None:
             raise SchemaValidationError(
                 "completion.score requires a structured workout"
@@ -268,6 +271,37 @@ def validate_semantic_grounding(report: "StructuredReport", context: DailyRunCon
         for field in ("status", "trainingType"):
             if not _is_unknown_text(report.completion.get(field)):
                 raise SchemaValidationError(f"completion.{field} requires a structured workout")
+
+    if not completion_evaluation.eligible and completion_score is not None:
+        raise SchemaValidationError(
+            "completion.score requires eligible completion evidence"
+        )
+
+    if context.plan_association in {"UNMATCHED", "AMBIGUOUS"}:
+        if not _is_unknown_text(report.training_purpose):
+            raise SchemaValidationError(
+                "trainingPurpose requires a matched plan association"
+            )
+        for field in ("status", "trainingType"):
+            if not _is_unknown_text(report.completion.get(field)):
+                raise SchemaValidationError(
+                    f"completion.{field} requires a matched plan association"
+                )
+
+    if completion_evaluation.eligible:
+        for field in ("status", "trainingType"):
+            if _is_unknown_text(report.completion.get(field)):
+                raise SchemaValidationError(
+                    f"completion.{field} is required for eligible completion evidence"
+                )
+        if completion_score is None:
+            raise SchemaValidationError(
+                "completion.score is required for eligible completion evidence"
+            )
+        if has_completion_purpose_evidence(context) and _is_unknown_text(report.training_purpose):
+            raise SchemaValidationError(
+                "trainingPurpose is required for eligible completion evidence"
+            )
 
     narratives = _report_narratives(report)
     if _context_has_collection(context, "laps", "splits"):

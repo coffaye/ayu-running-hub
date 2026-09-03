@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from .context import DailyRunContext
+from .completion import completion_evaluation_eligibility
 from .errors import SchemaValidationError
 
 
@@ -161,9 +162,16 @@ def context_for_model(context: DailyRunContext) -> dict[str, Any]:
         "tomorrowSchedule": dict(context.tomorrow_schedule) if context.tomorrow_schedule is not None else None,
         "planAssociation": context.plan_association,
         "planAssociationEvidence": list(context.plan_association_evidence),
+        "completionEvaluation": completion_evaluation_eligibility(context).to_dict(),
         "dataQuality": dict(context.data_quality),
     }
 
 
 def context_for_model_json(context: DailyRunContext) -> str:
     return json.dumps(context_for_model(context), ensure_ascii=False, sort_keys=True)
+
+
+def build_model_input(context: DailyRunContext) -> dict[str, Any]:
+    """Named model-boundary entry point retained for contract callers."""
+
+    return context_for_model(context)
