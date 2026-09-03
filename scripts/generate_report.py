@@ -1,8 +1,8 @@
-"""Build and atomically install one staging report into a running_page checkout.
+"""Build and atomically install one COROS-backed report into a running_page checkout.
 
 The workflow owns checkout, branch and push. This script owns the small,
-auditable transaction from a validated StructuredReport to exactly one HTML
-file plus the manifest entry for that run.
+auditable transaction from a running_page identity guard and validated COROS
+Daily Bundle to exactly one HTML file plus the manifest entry for that run.
 """
 
 from __future__ import annotations
@@ -22,7 +22,9 @@ ENGINE_ROOT = Path(__file__).resolve().parents[1] / "engine"
 if str(ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(ENGINE_ROOT))
 
-from ayu_report_engine.adapters.running_page import load_running_page_context
+from ayu_report_engine.adapters.running_page import running_page_identity_exists
+from ayu_report_engine.bundle import context_from_coros_bundle
+from ayu_report_engine.coros_collector_client import fetch_coros_daily_bundle_from_env
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig
 from ayu_report_engine.render import render_html
 from ayu_report_engine.report import StructuredReport, validate_structured_report
@@ -164,13 +166,15 @@ def build_and_install(
     request_id: str,
 ) -> dict[str, Any]:
     normalized = normalize_run_id(run_id)
-    if not request_id.strip():
-        raise ValueError("request_id must be non-empty")
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise ValueError("request_id must be a non-empty string")
+    normalized_request_id = request_id.strip()
     activities = source_root / "src" / "static" / "activities.json"
     sqlite = source_root / "run_page" / "data.db"
-    if not activities.exists():
-        raise FileNotFoundError("running_page master activities.json is missing")
-    context = load_running_page_context(activities, sqlite if sqlite.exists() else None, normalized)
+    if not running_page_identity_exists(activities, sqlite if sqlite.exists() else None, normalized):
+        raise ValueError("run_id not found in running_page master identity sources")
+    bundle = fetch_coros_daily_bundle_from_env(normalized, normalized_request_id)
+    context = context_from_coros_bundle(bundle)
     config = DeepSeekConfig.from_env(load_local_files=False)
     if not config.api_key:
         raise ValueError("DEEPSEEK_API_KEY is not configured")
@@ -184,7 +188,7 @@ def build_and_install(
         config=config,
         generated_at=_now(),
     )
-    result["requestId"] = request_id
+    result["requestId"] = normalized_request_id
     return result
 
 
