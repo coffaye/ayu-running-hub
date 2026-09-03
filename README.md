@@ -59,41 +59,23 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for boundaries,
 future integration contract, and [docs/MIGRATION.md](docs/MIGRATION.md) for
 the repository split record.
 
-## Production report boundary
+## Phase 4 staging boundary
 
 `.github/workflows/generate-report.yml` accepts only string `run_id` and a
-Worker-generated `request_id`. It checks that the identity exists in
-`coffaye/running_page@master`, fetches training facts from the signed Phase 6
-COROS Daily Bundle endpoint, analyzes with the configured DeepSeek variables,
-and publishes only the requested report plus its manifest entry to
-`coffaye/running_page@master`. The workflow uses per-run concurrency and an
-atomic HTML/manifest transaction.
+Worker-generated `request_id`. It reads activity data from
+`coffaye/running_page@master`, analyzes with the configured DeepSeek variables,
+and writes only `coffaye/running_page@ayu-report-e2e` report files. The
+workflow uses per-run concurrency and an atomic HTML/manifest transaction.
 
-The production sequence is fail-closed:
-
-```text
-running_page identity guard
-        -> signed COROS Daily Bundle
-        -> DailyRunContext
-        -> explicit DeepSeekAnalyzer
-        -> validated StructuredReport
-        -> deterministic HTML + browser Canvas PNG export
-        -> conflict-safe running_page publication
-```
-
-The `phase6-report-preview.yml` workflow remains a manual-only,
-non-publication diagnostic and is not part of the production path.
-
-`worker/` is the separately deployable Cloudflare Worker, retained under the
-historical `ayu-running-hub-staging` name. It is protected by Worker-level
-HTTP Basic Auth, performs a master run lookup, and uses a SQLite-backed
-Durable Object lock before dispatching the workflow. Configure
-`REPORT_AUTH_USERNAME` as a normal Worker variable and `REPORT_AUTH_PASSWORD`
-plus `HUB_ACTIONS_TOKEN` as Cloudflare Secrets; configure `DEEPSEEK_API_KEY`,
-`RUNNING_PAGE_WRITE_TOKEN`, and `AYU_COLLECTOR_SHARED_SECRET` as GitHub Actions
-Secrets. `PHASE6_COLLECTOR_URL` is a repository variable.
+`worker/` is the separately deployable `ayu-running-hub-staging` Cloudflare
+Worker. It is protected by Worker-level HTTP Basic Auth, performs a master run
+lookup, and uses a SQLite-backed Durable Object lock before dispatching the
+workflow. Configure `REPORT_AUTH_USERNAME` as a normal Worker variable and
+`REPORT_AUTH_PASSWORD` plus `HUB_ACTIONS_TOKEN` as Cloudflare Secrets; configure
+`DEEPSEEK_API_KEY` and `RUNNING_PAGE_WRITE_TOKEN` as GitHub Actions Secrets. No
+production Pages or `running_page/master` write is part of staging.
 
 Each newly generated Manifest entry records both the compatibility field
 `engineVersion` and the Hub identity field `hubVersion`, plus the current Hub
 commit, schema, prompt, renderer, model and reasoning settings. Existing
-entries remain readable during the production migration.
+entries remain readable during the staging migration.

@@ -1,8 +1,9 @@
-# Ayu Running Hub Worker
+# Ayu Running Hub staging Worker
 
-This Worker retains the historical `ayu-running-hub-staging` name while serving
-the production report-generation entry point. It uses Worker-level HTTP Basic
-Auth and keeps the isolated Phase 6 COROS collector Worker separate.
+This is the non-production Cloudflare Worker boundary for report generation.
+The intended name is `ayu-running-hub-staging`; it uses Worker-level HTTP Basic
+Auth and must not be configured as the production `running_page` entry point
+during Phase 4.
 
 ## Boundary
 

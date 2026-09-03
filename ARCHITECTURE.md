@@ -16,14 +16,15 @@ dependency on a particular caller, checkout location or web deployment:
 | `render_html` | Ayu Running HTML and Canvas PNG export script | Browser performs PNG export |
 | schemas/docs/tests | Contract, provenance and regression protection | No production secrets |
 
-The Codex plugin and the static `running_page` report viewer remain consumers,
-not dependencies of the Hub. The production caller is included as a separate
-boundary under `.github/workflows/` and `worker/`: the Worker owns HTTP Basic
-Auth, run lookup, idempotency and status normalization; the workflow owns the
-identity guard, signed COROS Daily Bundle fetch, report-build transaction and
-conflict-safe `running_page/master` publication. The
-`phase6-report-preview.yml` workflow remains a manual-only diagnostic and
-never publishes production reports.
+The future GitHub Actions/Cloudflare caller belongs outside this repository.
+Likewise, the Codex plugin and the static `running_page` report viewer are
+consumers, not dependencies of the Hub.
+
+For Phase 4 staging, the caller is intentionally included as a separate
+boundary under `.github/workflows/` and `worker/`: the workflow owns the
+report-build transaction and staging-branch push, while the Worker owns HTTP
+Basic Auth, run lookup, idempotency and status normalization. Neither
+boundary is a production deployment or writes `running_page/master`.
 
 ## Data and privacy rules
 
