@@ -14,6 +14,12 @@ try {
   await page.locator('#download-png').click();
   const download = await downloadPromise;
   await download.saveAs(path.resolve(pngPath));
+  const layoutAudit = await page.evaluate(() => window.__ayuPngLayoutAudit);
+  if (!layoutAudit || layoutAudit.status !== 'PASS') throw new Error(`PNG_LAYOUT_SAFE failed: ${JSON.stringify(layoutAudit)}`);
+  if (layoutAudit.hasScore && (!layoutAudit.score || !layoutAudit.score.statusText || layoutAudit.score.statusText !== layoutAudit.score.statusText.trim())) {
+    throw new Error(`PNG_LAYOUT_SAFE score audit missing: ${JSON.stringify(layoutAudit)}`);
+  }
+  console.log(JSON.stringify({ pngLayoutSafe: 'PASS', scoreLines: layoutAudit.score?.lines ?? 0, scoreStatus: layoutAudit.score?.statusText ?? null }));
 } finally {
   await browser.close();
 }
