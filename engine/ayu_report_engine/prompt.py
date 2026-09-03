@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .skill_provenance import skill_source_commit
 from .version import PROMPT_VERSION
 
 
@@ -31,7 +32,7 @@ COROS Daily Bundle 是经过服务端认证、日期守卫和隐私清洗的唯�
 def build_prompt() -> str:
     """Return the immutable v7 prompt used by every DeepSeek trial."""
 
-    return f"{SYSTEM_PROMPT}\nPrompt version: {PROMPT_VERSION}.\nVendored Skill contract: ayu-running-reports@98e4fb3b677e9bf3a6a120c11093c4ce1bcc3f37."
+    return f"{SYSTEM_PROMPT}\nPrompt version: {PROMPT_VERSION}.\nVendored Skill contract: ayu-running-reports@{skill_source_commit()}."
 
 
 def build_instructions() -> str:

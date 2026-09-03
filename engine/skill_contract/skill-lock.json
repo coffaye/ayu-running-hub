@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "1.0.0",
+  "sourceRepository": "coffaye/ayu-running-reports",
+  "sourceCommit": "98e4fb3b677e9bf3a6a120c11093c4ce1bcc3f37",
+  "files": {
+    "skills/ayu-running-reports/SKILL.md": {
+      "sourcePath": "skills/ayu-running-reports/SKILL.md",
+      "vendoredPath": "engine/skill_contract/SKILL.md",
+      "blobSha": "a0c916056ccbc05abbf10bd1b5a13d96f67a2499"
+    },
+    "skills/ayu-running-reports/references/design-system.md": {
+      "sourcePath": "skills/ayu-running-reports/references/design-system.md",
+      "vendoredPath": "engine/skill_contract/references/design-system.md",
+      "blobSha": "fe2b8497daec0614713e4d56a1a23726e8c0dd89"
+    },
+    "skills/ayu-running-reports/references/png-export.md": {
+      "sourcePath": "skills/ayu-running-reports/references/png-export.md",
+      "vendoredPath": "engine/skill_contract/references/png-export.md",
+      "blobSha": "3b698cb357efeddb3c350c22cf455704197ca4e3"
+    },
+    "skills/ayu-running-reports/references/report-modes.md": {
+      "sourcePath": "skills/ayu-running-reports/references/report-modes.md",
+      "vendoredPath": "engine/skill_contract/references/report-modes.md",
+      "blobSha": "81762bae70847bfb519f750276b172493b3c6d81"
+    },
+    "skills/ayu-running-reports/references/shadowrunner/content-ethics.md": {
+      "sourcePath": "skills/ayu-running-reports/references/shadowrunner/content-ethics.md",
+      "vendoredPath": "engine/skill_contract/references/shadowrunner/content-ethics.md",
+      "blobSha": "022c68caa1ad3f66ade92bfed25a91d811391529"
+    },
+    "skills/ayu-running-reports/references/shadowrunner/frameworks.md": {
+      "sourcePath": "skills/ayu-running-reports/references/shadowrunner/frameworks.md",
+      "vendoredPath": "engine/skill_contract/references/shadowrunner/frameworks.md",
+      "blobSha": "81029ea50974f86e091571198c1a6f36d5a5a235"
+    },
+    "skills/ayu-running-reports/references/shadowrunner/voice-and-views.md": {
+      "sourcePath": "skills/ayu-running-reports/references/shadowrunner/voice-and-views.md",
+      "vendoredPath": "engine/skill_contract/references/shadowrunner/voice-and-views.md",
+      "blobSha": "77a86334733fe09966df602544f9858b3b715cad"
+    },
+    "skills/ayu-running-reports/references/upstream/client-connections.md": {
+      "sourcePath": "skills/ayu-running-reports/references/upstream/client-connections.md",
+      "vendoredPath": "engine/skill_contract/references/upstream/client-connections.md",
+      "blobSha": "5a1c692b2d0dd0f89159c4a404b33c4dd37bf67c"
+    },
+    "skills/ayu-running-reports/references/upstream/connection-diagnostics.md": {
+      "sourcePath": "skills/ayu-running-reports/references/upstream/connection-diagnostics.md",
+      "vendoredPath": "engine/skill_contract/references/upstream/connection-diagnostics.md",
+      "blobSha": "6183985645a92db635316df701f9af3dacbc47dd"
+    },
+    "skills/ayu-running-reports/references/upstream/openweathermap.md": {
+      "sourcePath": "skills/ayu-running-reports/references/upstream/openweathermap.md",
+      "vendoredPath": "engine/skill_contract/references/upstream/openweathermap.md",
+      "blobSha": "7618ba5f865d2d4ee397cd391064bd2b95bf74c9"
+    },
+    "skills/ayu-running-reports/references/upstream/privacy-safety.md": {
+      "sourcePath": "skills/ayu-running-reports/references/upstream/privacy-safety.md",
+      "vendoredPath": "engine/skill_contract/references/upstream/privacy-safety.md",
+      "blobSha": "2036bb40fa6efb7b9fb4d9dd7eb135186d7a2e8d"
+    },
+    "skills/ayu-running-reports/references/upstream/review-methodology.md": {
+      "sourcePath": "skills/ayu-running-reports/references/upstream/review-methodology.md",
+      "vendoredPath": "engine/skill_contract/references/upstream/review-methodology.md",
+      "blobSha": "18d21ca6d886d94143509b4b2d91c7f3c453114d"
+    }
+  }
+}

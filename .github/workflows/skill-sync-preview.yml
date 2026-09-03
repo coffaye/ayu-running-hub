@@ -1,0 +1,97 @@
+name: Skill sync preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_commit:
+        description: "Full ayu-running-reports commit SHA to preview"
+        required: true
+        type: string
+      test_cases:
+        description: "Regression corpus selection"
+        required: true
+        default: "all"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Hub Stable
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout requested Skill commit
+        uses: actions/checkout@v4
+        with:
+          repository: coffaye/ayu-running-reports
+          ref: ${{ inputs.upstream_commit }}
+          fetch-depth: 0
+          path: skill-source
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build temporary Candidate workspace
+        run: |
+          mkdir candidate-hub
+          git archive --format=tar HEAD | tar -x -C candidate-hub
+          python scripts/sync_skill_contract.py \
+            --hub-root candidate-hub \
+            --source-root skill-source \
+            --source-commit "${{ inputs.upstream_commit }}" \
+            --report-out preview/sync-plan.json
+
+      - name: Verify Stable and Candidate engine contracts
+        run: |
+          python -m pip install --disable-pip-version-check -e ./engine
+          python -m unittest discover -s engine/tests -p 'test_*.py'
+          python -m unittest discover -s candidate-hub/engine/tests -p 'test_*.py'
+
+      - name: Install browser runtime for PNG comparison
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk >/dev/null
+          npm init -y >/dev/null 2>&1
+          npm install --no-save playwright@1.54.1 >/dev/null 2>&1
+          npx playwright install chromium >/dev/null 2>&1
+
+      - name: Generate offline Candidate comparison
+        env:
+          TEST_CASES: ${{ inputs.test_cases }}
+        run: |
+          if [ "$TEST_CASES" != "all" ]; then
+            echo "Only the fixed corpus selector 'all' is enabled in Phase 6C-1"
+            exit 1
+          fi
+          python scripts/skill_sync_preview.py \
+            --candidate-root candidate-hub \
+            --bundle engine/tests/fixtures/coros_daily_bundle_1787870493000.json \
+            --output-dir preview \
+            --export-png
+
+      - name: Assert review artifacts exist
+        run: |
+          test -s preview/sync-plan.json
+          test -s preview/comparison.json
+          test -s preview/stable/report.html
+          test -s preview/candidate/report.html
+          test -s preview/stable/report.png
+          test -s preview/candidate/report.png
+          echo "HTML and PNG artifacts are ready for the required human visual confirmation."
+
+      - name: Upload Stable/Candidate review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ayu-skill-sync-preview-${{ inputs.upstream_commit }}
+          path: preview/
+          if-no-files-found: error
+          retention-days: 14

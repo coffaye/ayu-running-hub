@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Stable/Candidate Skill comparison registry; unavailable cases are intentionally not fabricated.",
+  "cases": [
+    {
+      "id": "structured-aerobic",
+      "category": "structured aerobic",
+      "fixture": "completion_canary_1787870493000.json",
+      "kind": "context",
+      "status": "available",
+      "provenance": "known canary context fixture"
+    },
+    {
+      "id": "interval",
+      "category": "interval",
+      "fixture": null,
+      "kind": "coros-daily-bundle",
+      "status": "missing",
+      "provenance": "no sanitized real fixture committed"
+    },
+    {
+      "id": "long-run",
+      "category": "long run",
+      "fixture": null,
+      "kind": "coros-daily-bundle",
+      "status": "missing",
+      "provenance": "no sanitized real fixture committed"
+    },
+    {
+      "id": "no-plan-free-activity",
+      "category": "no-plan free activity",
+      "fixture": "coros_daily_bundle_1787870493000.json",
+      "kind": "coros-daily-bundle",
+      "status": "available",
+      "provenance": "known sanitized COROS bundle fixture"
+    },
+    {
+      "id": "incomplete-historical",
+      "category": "incomplete/historical",
+      "fixture": null,
+      "kind": "coros-daily-bundle",
+      "status": "missing",
+      "provenance": "no sanitized real fixture committed"
+    }
+  ]
+}

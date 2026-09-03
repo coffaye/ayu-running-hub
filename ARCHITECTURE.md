@@ -35,7 +35,10 @@ metrics rather than medical or performance guarantees.
 
 ## Versioning
 
-The four public identity values live in `engine/ayu_report_engine/version.py`.
-Schema changes require updating both JSON schemas and tests. A caller pins a
-Hub commit and injects `AYU_ENGINE_COMMIT`; generated reports then carry the
-actual Hub provenance instead of a mutable branch name.
+The engine, schema, prompt and renderer identity values live in
+`engine/ayu_report_engine/version.py`. The independent Skill contract version
+and its source commit live in `engine/skill_contract/skill-lock.json`; runtime
+code reads only that local lock, never an upstream branch. Schema changes
+require updating both JSON schemas and tests. A caller pins a Hub commit and
+injects `AYU_ENGINE_COMMIT`; generated reports then carry the actual Hub and
+Skill provenance instead of mutable branch names.

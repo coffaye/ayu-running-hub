@@ -4,5 +4,6 @@
   "sourcePath": "skills/ayu-running-reports/SKILL.md",
   "sourceBlobSha": "a0c916056ccbc05abbf10bd1b5a13d96f67a2499",
   "vendoredAt": "2026-08-30",
-  "scope": "Phase 6A staging preview only"
+  "scope": "Legacy single-file provenance pointer retained for compatibility; skill-lock.json is authoritative for production",
+  "authoritativeLock": "engine/skill_contract/skill-lock.json"
 }

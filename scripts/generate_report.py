@@ -28,6 +28,7 @@ from ayu_report_engine.coros_collector_client import fetch_coros_daily_bundle_fr
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig
 from ayu_report_engine.render import render_html
 from ayu_report_engine.report import StructuredReport, validate_structured_report
+from ayu_report_engine.skill_provenance import skill_manifest_provenance
 from ayu_report_engine.version import (
     ENGINE_VERSION,
     PROMPT_VERSION,
@@ -89,6 +90,7 @@ def manifest_entry(report: StructuredReport, config: DeepSeekConfig, generated_a
         "model": config.model,
         "reasoningEffort": config.reasoning_effort,
     }
+    entry.update(skill_manifest_provenance())
     if not isinstance(entry["engineCommit"], str) or not entry["engineCommit"].strip():
         raise ValueError("AYU_ENGINE_COMMIT must be set to the current Hub commit")
     return entry

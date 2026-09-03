@@ -48,6 +48,10 @@ class StagingBuildTests(unittest.TestCase):
         self.assertEqual(entry["hubVersion"], "0.4.0")
         self.assertEqual(entry["engineCommit"], "hub-test-commit")
         self.assertEqual(entry["reasoningEffort"], "low")
+        self.assertEqual(entry["dataSource"], "coros-mcp")
+        self.assertEqual(entry["skillContractVersion"], "1.0.0")
+        self.assertEqual(entry["skillSourceCommit"], "98e4fb3b677e9bf3a6a120c11093c4ce1bcc3f37")
+        self.assertEqual(entry["collectorContractVersion"], "coros-daily-bundle-v1")
 
     def test_running_page_identity_guard_does_not_require_training_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

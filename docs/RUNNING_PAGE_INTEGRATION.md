@@ -42,3 +42,9 @@ runtime to that SHA. The production identity source and publication target are
 idempotency; the Hub owns COROS bundle parsing, analysis boundaries, validation
 and render semantics; `running_page` owns the public Manifest, HTML files and
 viewer UI.
+
+New entries also carry the explicit Skill contract version/source commit and
+collector contract version. The frontend treats these as optional metadata so
+schema-1 legacy entries remain readable. Skill changes are reviewed through
+the manual controlled-sync preview; production does not follow the upstream
+Skill branch and historical entries are not regenerated.

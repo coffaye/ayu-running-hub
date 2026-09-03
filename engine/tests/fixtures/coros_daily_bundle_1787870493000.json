@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "1787870493000",
+  "reportDate": "2026-08-28",
+  "retrievedAt": "2026-08-30T00:40:20Z",
+  "timezone": "Asia/Shanghai",
+  "activity": {
+    "sportType": 100,
+    "title": "Outdoor Run",
+    "distanceKm": 11.28,
+    "durationSec": 3600,
+    "averagePaceSecPerKm": 319,
+    "averageHeartRateBpm": 146,
+    "cadenceSpm": 193,
+    "powerW": 197,
+    "trainingLoad": 118
+  },
+  "laps": [
+    {
+      "index": 1,
+      "distanceKm": 1,
+      "durationSec": 325,
+      "paceSecPerKm": 325,
+      "heartRateBpm": 145
+    }
+  ],
+  "trainingContext": {
+    "todaySchedule": null,
+    "planAssociation": "UNMATCHED",
+    "planAssociationEvidence": []
+  },
+  "recentLoad": {
+    "reportDate": "2026-08-28",
+    "shortTermLoad": 151,
+    "longTermLoad": 131,
+    "ratio": 1.15,
+    "status": "Optimized"
+  },
+  "recovery": {
+    "observedAt": "2026-08-30T00:00:00Z",
+    "recoveryPercent": null,
+    "estimatedFullRecoveryAt": null,
+    "reportDateAligned": false
+  },
+  "fitness": {
+    "vo2max": 59
+  },
+  "tomorrowSchedule": null,
+  "dataQuality": {
+    "activity": "complete",
+    "laps": "available",
+    "todaySchedule": "unavailable",
+    "tomorrowSchedule": "unavailable",
+    "load": "date-matched",
+    "recovery": "current-only-excluded",
+    "fitness": "available"
+  },
+  "provenance": {
+    "source": "coros-mcp",
+    "tools": {
+      "activity": "querySportRecords"
+    }
+  }
+}
