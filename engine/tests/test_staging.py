@@ -46,7 +46,7 @@ class StagingBuildTests(unittest.TestCase):
         entry = manifest_entry(self.report, self.config, "2030-03-05T00:00:00Z")
         self.assertEqual(entry["runId"], "1900000000000")
         self.assertEqual(entry["localDate"], self.context.local_date)
-        self.assertEqual(entry["hubVersion"], "0.4.1")
+        self.assertEqual(entry["hubVersion"], "0.4.2")
         self.assertEqual(entry["engineCommit"], "hub-test-commit")
         self.assertEqual(entry["reasoningEffort"], "low")
         self.assertEqual(entry["dataSource"], "coros-mcp")

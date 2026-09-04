@@ -1,6 +1,6 @@
 """Version identity shared by Codex, CLI, and future Actions callers."""
 
-ENGINE_VERSION = "0.4.1"
+ENGINE_VERSION = "0.4.2"
 SCHEMA_VERSION = "1.1"
 PROMPT_VERSION = "ayu-daily-v7"
 RENDERER_VERSION = "ayu-html-canvas-v3.1"

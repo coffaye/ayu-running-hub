@@ -28,7 +28,9 @@ DEFAULT_REASONING_EFFORT = "high"
 DEFAULT_MAX_OUTPUT_TOKENS = 16384
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_RETRIES = 1
+MAX_FORMAT_RETRIES = 1
 MAX_SEMANTIC_RETRIES = 2
+MAX_TOTAL_MODEL_CALLS = 4
 ALLOWED_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
 ENV_FILE_NAMES = (".env.local", ".env")
 ENV_FILE_KEYS = frozenset(
@@ -54,12 +56,26 @@ class DeepSeekError(EngineError):
         status_code: int | None = None,
         retryable: bool = False,
         retry_after: float | None = None,
+        validation_code: str | None = None,
+        safe_metadata: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
         self.category = category
         self.status_code = status_code
         self.retryable = retryable
         self.retry_after = retry_after
+        self.validation_code = validation_code
+        self.safe_metadata = dict(safe_metadata or {})
+
+    def to_safe_dict(self) -> dict[str, Any]:
+        """Return diagnostics that never contain provider output or credentials."""
+
+        return {
+            "category": self.category,
+            "statusCode": self.status_code,
+            "validationCode": self.validation_code,
+            **self.safe_metadata,
+        }
 
 
 class MissingAPIKeyError(DeepSeekError):
@@ -196,6 +212,16 @@ class AnalyzerMetadata:
     http_status: int | None = None
     response_status: str | None = None
     analyzer_version: str = ENGINE_VERSION
+    transport_retry_count: int = 0
+    format_retry_count: int = 0
+    semantic_retry_count: int = 0
+    model_call_count: int = 1
+    output_text_part_count: int | None = None
+    output_char_count: int | None = None
+    first_non_whitespace_char_is_object: bool | None = None
+    last_non_whitespace_char_is_object_close: bool | None = None
+    json_decode_error_position_bucket: str | None = None
+    validation_code: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +239,16 @@ class AnalyzerMetadata:
             "httpStatus": self.http_status,
             "responseStatus": self.response_status,
             "analyzerVersion": self.analyzer_version,
+            "transportRetryCount": self.transport_retry_count,
+            "formatRetryCount": self.format_retry_count,
+            "semanticRetryCount": self.semantic_retry_count,
+            "modelCallCount": self.model_call_count,
+            "outputTextPartCount": self.output_text_part_count,
+            "outputCharCount": self.output_char_count,
+            "firstNonWhitespaceCharIsObject": self.first_non_whitespace_char_is_object,
+            "lastNonWhitespaceCharIsObjectClose": self.last_non_whitespace_char_is_object_close,
+            "jsonDecodeErrorPositionBucket": self.json_decode_error_position_bucket,
+            "validationCode": self.validation_code,
         }
 
 
@@ -296,7 +332,13 @@ def _http_error(response: TransportResponse) -> DeepSeekError:
     )
 
 
-def _extract_output_text(body: Mapping[str, Any]) -> str:
+@dataclass(frozen=True)
+class _OutputTextExtraction:
+    text: str
+    part_count: int
+
+
+def _extract_output_text_parts(body: Mapping[str, Any]) -> _OutputTextExtraction:
     output = body.get("output")
     if not isinstance(output, list):
         raise DeepSeekError("DeepSeek response has no output messages", category="malformed_response")
@@ -315,14 +357,67 @@ def _extract_output_text(body: Mapping[str, Any]) -> str:
                     parts.append(text)
     if not parts:
         raise DeepSeekError("DeepSeek response has no final output text", category="malformed_response")
-    return "".join(parts)
+    # Responses API output_text parts are ordered fragments of the final message.
+    # Reassemble all fragments; selecting the first would silently discard data,
+    # while joining separate complete objects remains safely invalid JSON.
+    return _OutputTextExtraction(text="".join(parts), part_count=len(parts))
 
 
-def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
-    """Identify failures for which a bounded corrective model response is useful."""
+def _extract_output_text(body: Mapping[str, Any]) -> str:
+    """Reassemble all ordered output_text fragments for compatibility callers."""
+
+    return _extract_output_text_parts(body).text
+
+
+def _output_text_part_count(body: Mapping[str, Any]) -> int:
+    output = body.get("output")
+    if not isinstance(output, list):
+        return 0
+    return sum(
+        1
+        for item in output
+        if isinstance(item, Mapping)
+        and item.get("type") == "message"
+        and isinstance(item.get("content"), list)
+        for part in item["content"]
+        if isinstance(part, Mapping)
+        and part.get("type") == "output_text"
+        and isinstance(part.get("text"), str)
+    )
+
+
+def _json_decode_position_bucket(position: int, text_length: int) -> str:
+    if position <= 0:
+        return "start"
+    if position >= text_length:
+        return "end"
+    ratio = position / max(text_length, 1)
+    if ratio < 0.25:
+        return "early"
+    if ratio < 0.75:
+        return "middle"
+    return "late"
+
+
+def _validation_failure_code(error: SchemaValidationError) -> str:
+    """Map local validation failures to safe, non-content diagnostic codes."""
 
     message = str(error)
-    return any(
+    if any(
+        marker in message
+        for marker in (
+            "completion.",
+            "completion score",
+            "trainingPurpose requires",
+            "training purpose",
+        )
+    ):
+        return "completion_contract"
+    if "verdict" in message:
+        return "verdict_contract"
+    if "metricRef" in message or "metric ref" in message.lower():
+        return "metric_ref_contract"
+    if any(
         marker in message
         for marker in (
             "requires a structured workout",
@@ -336,16 +431,34 @@ def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
             "unsupported workout claim",
             "contradicts available lap data",
             "lacks supporting physiological facts",
-            "verdict must contain",
-            "verdict must be a single line",
-            "verdict must not contain recommendation language",
-            "verdict must not use evidence-list formatting",
-            "verdict must remain",
             "must not contain raw numeric values",
             "must not contain the literal null",
             "must not contain schema field names",
         )
-    )
+    ):
+        return "semantic_validation"
+    if any(
+        marker in message
+        for marker in (
+            "must be ",
+            "must contain ",
+            "has unexpected fields",
+            "unsupported StructuredReport",
+        )
+    ):
+        return "schema_validation"
+    return "other_validation"
+
+
+def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
+    """Compatibility helper for callers that only need retry eligibility."""
+
+    return _validation_failure_code(error) in {
+        "semantic_validation",
+        "completion_contract",
+        "verdict_contract",
+        "metric_ref_contract",
+    }
 
 
 def _usage(body: Mapping[str, Any], key: str) -> int | None:
@@ -357,6 +470,57 @@ def _usage(body: Mapping[str, Any], key: str) -> int | None:
         details = usage.get("output_tokens_details")
         value = details.get(key) if isinstance(details, Mapping) else None
     return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _response_safe_metadata(
+    response: TransportResponse,
+    extraction: _OutputTextExtraction | None = None,
+    *,
+    json_parse_state: str = "not_attempted",
+    decode_error: json.JSONDecodeError | None = None,
+    validation_code: str | None = None,
+) -> dict[str, Any]:
+    """Build bounded diagnostics without retaining provider content."""
+
+    body = response.body
+    text = extraction.text if extraction is not None else ""
+    stripped = text.lstrip()
+    status = body.get("status") if isinstance(body.get("status"), str) else None
+    incomplete_details = body.get("incomplete_details")
+    incomplete_reason = (
+        incomplete_details.get("reason")
+        if isinstance(incomplete_details, Mapping)
+        and incomplete_details.get("reason") in {"max_output_tokens", "content_filter", "stop"}
+        else None
+    )
+    return {
+        "responseStatus": status,
+        "modelReturned": body.get("model") if isinstance(body.get("model"), str) else None,
+        "httpStatus": response.status_code,
+        "outputTextPartCount": extraction.part_count if extraction is not None else _output_text_part_count(body),
+        "outputCharCount": len(text) if extraction is not None else None,
+        "firstNonWhitespaceCharIsObject": bool(stripped) and stripped[0] == "{",
+        "lastNonWhitespaceCharIsObjectClose": bool(stripped) and stripped[-1] == "}",
+        "jsonParseState": json_parse_state,
+        "jsonDecodeErrorPositionBucket": (
+            _json_decode_position_bucket(decode_error.pos, len(text))
+            if decode_error is not None
+            else None
+        ),
+        "inputTokens": _usage(body, "input_tokens"),
+        "outputTokens": _usage(body, "output_tokens"),
+        "reasoningTokens": _usage(body, "reasoning_tokens"),
+        "totalTokens": _usage(body, "total_tokens"),
+        "incompleteReason": incomplete_reason,
+        "validationCode": validation_code,
+    }
+
+
+FORMAT_CORRECTION_INSTRUCTIONS = (
+    "\n上一次响应无法解析为 JSON。请从头完整重新输出一个 StructuredReport："
+    "且仅返回一个完整 JSON object；不要 markdown fence，不要解释文字，不要返回 patch；"
+    "必须满足指定 json_schema，确保输出完整且不要截断。"
+)
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -458,8 +622,24 @@ class DeepSeekAnalyzer:
         payload = self._payload(context)
         started = self._clock()
         retry_count = 0
+        transport_retry_count = 0
+        format_retry_count = 0
         semantic_retry_count = 0
+        model_call_count = 0
         while True:
+            if model_call_count >= MAX_TOTAL_MODEL_CALLS:
+                raise DeepSeekError(
+                    "DeepSeek retry budget exhausted",
+                    category="retry_exhausted",
+                    retryable=False,
+                    safe_metadata={
+                        "transportRetryCount": transport_retry_count,
+                        "formatRetryCount": format_retry_count,
+                        "semanticRetryCount": semantic_retry_count,
+                        "modelCallCount": model_call_count,
+                    },
+                )
+            model_call_count += 1
             try:
                 try:
                     response = self._transport(url, headers, payload, self.config.timeout_seconds)
@@ -490,34 +670,85 @@ class DeepSeekAnalyzer:
                         "DeepSeek response incomplete; report was not rendered",
                         category="content_filter" if reason == "content_filter" else "incomplete",
                         retryable=False,
+                        status_code=response.status_code,
+                        safe_metadata=_response_safe_metadata(response),
                     )
                 if status == "failed":
                     raise DeepSeekError(
                         "DeepSeek response failed; report was not rendered",
                         category="provider_failed",
                         retryable=False,
+                        status_code=response.status_code,
+                        safe_metadata=_response_safe_metadata(response),
                     )
                 if status != "completed":
                     raise DeepSeekError(
                         "DeepSeek response has unsupported status",
                         category="malformed_response",
                         retryable=False,
+                        status_code=response.status_code,
+                        safe_metadata=_response_safe_metadata(response),
                     )
-                text = _extract_output_text(response.body)
+                extraction = _extract_output_text_parts(response.body)
+                response_metadata = _response_safe_metadata(
+                    response,
+                    extraction,
+                    json_parse_state="not_attempted",
+                )
                 try:
-                    model_output = json.loads(text)
-                except json.JSONDecodeError:
-                    raise DeepSeekError(
+                    model_output = json.loads(extraction.text)
+                except json.JSONDecodeError as exc:
+                    format_error = DeepSeekError(
                         "DeepSeek output is not valid JSON",
                         category="malformed_response",
+                        status_code=response.status_code,
                         retryable=False,
-                    ) from None
+                        safe_metadata=_response_safe_metadata(
+                            response,
+                            extraction,
+                            json_parse_state="invalid",
+                            decode_error=exc,
+                        )
+                        | {
+                            "transportRetryCount": transport_retry_count,
+                            "formatRetryCount": format_retry_count,
+                            "semanticRetryCount": semantic_retry_count,
+                            "modelCallCount": model_call_count,
+                        },
+                    )
+                    if format_retry_count < MAX_FORMAT_RETRIES and model_call_count < MAX_TOTAL_MODEL_CALLS:
+                        format_retry_count += 1
+                        retry_count += 1
+                        payload["instructions"] = str(payload["instructions"]) + FORMAT_CORRECTION_INSTRUCTIONS
+                        continue
+                    raise format_error from None
+                response_metadata = _response_safe_metadata(
+                    response,
+                    extraction,
+                    json_parse_state="valid",
+                )
                 try:
                     report = report_from_model_output(model_output, context)
                 except SchemaValidationError as exc:
+                    validation_code = _validation_failure_code(exc)
+                    validation_metadata = {
+                        **response_metadata,
+                        "validationCode": validation_code,
+                        "transportRetryCount": transport_retry_count,
+                        "formatRetryCount": format_retry_count,
+                        "semanticRetryCount": semantic_retry_count,
+                        "modelCallCount": model_call_count,
+                    }
                     if (
-                        _is_semantic_validation_failure(exc)
+                        validation_code
+                        in {
+                            "semantic_validation",
+                            "completion_contract",
+                            "verdict_contract",
+                            "metric_ref_contract",
+                        }
                         and semantic_retry_count < MAX_SEMANTIC_RETRIES
+                        and model_call_count < MAX_TOTAL_MODEL_CALLS
                     ):
                         semantic_retry_count += 1
                         retry_count += 1
@@ -532,7 +763,8 @@ class DeepSeekAnalyzer:
                         )
                         payload["instructions"] = (
                             str(payload["instructions"])
-                            + "\n上一次输出未通过本地 semantic grounding。请重新完整输出 JSON：只陈述输入中明确存在的事实；"
+                            + f"\n上一次输出未通过本地 semantic grounding（安全分类：{validation_code}）。请重新完整输出 JSON："
+                            "只陈述输入中明确存在的事实；"
                             "没有 structuredWorkout 时不要写训练完成、训练类型、有氧/无氧区间、配速稳定、负荷等级、恢复状态或生理代价；"
                             "没有可靠的结构化训练、心率、分圈、负荷或恢复锚点时，相关字段必须保持 null/unknown；"
                             "不要在任何用户文案中写数字、literal null 或 JSON/camelCase 字段名；"
@@ -543,7 +775,10 @@ class DeepSeekAnalyzer:
                     raise DeepSeekError(
                         "DeepSeek output failed local validation",
                         category="validation",
+                        status_code=response.status_code,
                         retryable=False,
+                        validation_code=validation_code,
+                        safe_metadata=validation_metadata,
                     ) from exc
                 metadata = AnalyzerMetadata(
                     provider="deepseek",
@@ -563,11 +798,21 @@ class DeepSeekAnalyzer:
                     retry_count=retry_count,
                     http_status=response.status_code,
                     response_status=status,
+                    transport_retry_count=transport_retry_count,
+                    format_retry_count=format_retry_count,
+                    semantic_retry_count=semantic_retry_count,
+                    model_call_count=model_call_count,
+                    output_text_part_count=response_metadata["outputTextPartCount"],
+                    output_char_count=response_metadata["outputCharCount"],
+                    first_non_whitespace_char_is_object=response_metadata["firstNonWhitespaceCharIsObject"],
+                    last_non_whitespace_char_is_object_close=response_metadata["lastNonWhitespaceCharIsObjectClose"],
+                    json_decode_error_position_bucket=response_metadata["jsonDecodeErrorPositionBucket"],
                 )
                 return AnalysisResult(report=report, metadata=metadata)
             except DeepSeekError as exc:
-                if not exc.retryable or retry_count >= MAX_RETRIES:
+                if not exc.retryable or transport_retry_count >= MAX_RETRIES or model_call_count >= MAX_TOTAL_MODEL_CALLS:
                     raise
+                transport_retry_count += 1
                 retry_count += 1
-                delay = exc.retry_after if exc.retry_after is not None else min(2**retry_count, 8)
+                delay = exc.retry_after if exc.retry_after is not None else min(2**transport_retry_count, 8)
                 self._sleep(delay)

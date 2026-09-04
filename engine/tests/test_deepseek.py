@@ -114,6 +114,30 @@ def completed_response(output=None):
     )
 
 
+def completed_text_response(*parts):
+    return TransportResponse(
+        200,
+        {
+            "id": "resp_test",
+            "status": "completed",
+            "model": "deepseek-v4-flash",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": part} for part in parts],
+                }
+            ],
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 80,
+                "output_tokens_details": {"reasoning_tokens": 50},
+                "reasoning_tokens": 50,
+                "total_tokens": 180,
+            },
+        },
+    )
+
+
 class DeepSeekTests(unittest.TestCase):
     def config(self, **kwargs):
         values = {
@@ -176,6 +200,41 @@ class DeepSeekTests(unittest.TestCase):
         self.assertEqual(len(transport.calls), 2)
         self.assertEqual(result.metadata.retry_count, 1)
         self.assertIn("semantic grounding", transport.calls[1][2]["instructions"])
+        self.assertEqual(result.metadata.semantic_retry_count, 1)
+
+    def test_multiple_output_text_parts_are_reassembled_in_order(self):
+        serialized = json.dumps(valid_model_output(), ensure_ascii=False)
+        split = len(serialized) // 2
+        transport = MockTransport([completed_text_response(serialized[:split], serialized[split:])])
+        result = DeepSeekAnalyzer(self.config(), transport=transport).analyze_with_metadata(fit_context())
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(result.metadata.output_text_part_count, 2)
+        self.assertEqual(result.metadata.output_char_count, len(serialized))
+        self.assertTrue(result.metadata.first_non_whitespace_char_is_object)
+        self.assertTrue(result.metadata.last_non_whitespace_char_is_object_close)
+        self.assertIsNone(result.metadata.json_decode_error_position_bucket)
+
+    def test_malformed_json_gets_one_independent_format_retry(self):
+        transport = MockTransport([completed_text_response("not-json"), completed_response()])
+        result = DeepSeekAnalyzer(self.config(), transport=transport).analyze_with_metadata(fit_context())
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(result.metadata.retry_count, 1)
+        self.assertEqual(result.metadata.format_retry_count, 1)
+        self.assertEqual(result.metadata.transport_retry_count, 0)
+        self.assertEqual(result.metadata.semantic_retry_count, 0)
+        self.assertEqual(result.metadata.model_call_count, 2)
+        self.assertIn("且仅返回一个完整 JSON object", transport.calls[1][2]["instructions"])
+
+    def test_malformed_json_twice_fails_closed_without_model_text_in_metadata(self):
+        secret_text = "not-json-with-model-content"
+        transport = MockTransport([completed_text_response(secret_text), completed_text_response(secret_text)])
+        with self.assertRaises(DeepSeekError) as raised:
+            DeepSeekAnalyzer(self.config(), transport=transport).analyze(fit_context())
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(raised.exception.category, "malformed_response")
+        self.assertIsNone(raised.exception.validation_code)
+        self.assertEqual(raised.exception.safe_metadata["jsonParseState"], "invalid")
+        self.assertNotIn(secret_text, json.dumps(raised.exception.to_safe_dict(), ensure_ascii=False))
 
     def test_eligible_null_completion_gets_completion_contract_retry(self):
         corrected = {
@@ -288,13 +347,13 @@ class DeepSeekTests(unittest.TestCase):
 
     def test_malformed_provider_and_local_validation_fail(self):
         responses = [
-            TransportResponse(200, {"status": "completed", "output": []}),
-            completed_response({**valid_model_output(), "completion": {"status": "x", "trainingType": "structured", "score": 11}}),
-            completed_response({**valid_model_output(), "evidence": [{"metricRef": "summary.notAllowed", "interpretation": "非法指标"}]}),
-            completed_response({**valid_model_output(), "evidence": [{"metricRef": "summary.averageHrBpm", "interpretation": "value", "value": 150}]}),
+            [TransportResponse(200, {"status": "completed", "output": []})],
+            [completed_response({**valid_model_output(), "completion": {"status": "x", "trainingType": "structured", "score": 11}})] * 3,
+            [completed_response({**valid_model_output(), "evidence": [{"metricRef": "summary.notAllowed", "interpretation": "非法指标"}]})] * 3,
+            [completed_response({**valid_model_output(), "evidence": [{"metricRef": "summary.averageHrBpm", "interpretation": "value", "value": 150}]})] * 3,
         ]
-        for expected in ("malformed_response", "validation", "validation", "validation"):
-            transport = MockTransport([responses.pop(0)])
+        for expected, response_set in zip(("malformed_response", "validation", "validation", "validation"), responses):
+            transport = MockTransport(response_set)
             with self.subTest(expected=expected):
                 with self.assertRaises(DeepSeekError) as raised:
                     DeepSeekAnalyzer(self.config(), transport=transport).analyze(fit_context())
@@ -306,10 +365,12 @@ class DeepSeekTests(unittest.TestCase):
             {**valid_model_output(), "evidence": [{"metricRef": "summary.notAllowed", "interpretation": "x"}]},
             {**valid_model_output(), "evidence": [{"metricRef": "summary.averageHrBpm", "interpretation": "x"}]},
         ):
-            transport = MockTransport([completed_response(output)])
+            transport = MockTransport([completed_response(output), completed_response(output), completed_response(output)])
             with self.assertRaises(DeepSeekError) as raised:
                 DeepSeekAnalyzer(self.config(), transport=transport).analyze(context)
             self.assertEqual(raised.exception.category, "validation")
+            self.assertEqual(raised.exception.validation_code, "metric_ref_contract")
+            self.assertEqual(len(transport.calls), 3)
 
     def test_narrative_cannot_leak_values_or_schema_names(self):
         outputs = (
@@ -359,6 +420,30 @@ class DeepSeekTests(unittest.TestCase):
         with self.assertRaises(DeepSeekError):
             DeepSeekAnalyzer(self.config(), transport=transport, sleep=lambda _: None).analyze(fit_context())
         self.assertEqual(len(transport.calls), 2)
+
+    def test_total_model_call_cap_is_hard_even_when_budgets_would_sum_to_five(self):
+        semantic_invalid = completed_response({**valid_model_output(), "verdict": "建议今天继续训练并保持观察"})
+        transport = MockTransport([
+            TransportResponse(503, {}),
+            completed_text_response("not-json"),
+            semantic_invalid,
+            semantic_invalid,
+            completed_response(),
+        ])
+        with self.assertRaises(DeepSeekError) as raised:
+            DeepSeekAnalyzer(self.config(), transport=transport, sleep=lambda _: None).analyze(fit_context())
+        self.assertEqual(len(transport.calls), 4)
+        self.assertEqual(raised.exception.category, "validation")
+        self.assertEqual(raised.exception.validation_code, "verdict_contract")
+
+    def test_local_validation_failure_is_classified_and_fails_closed(self):
+        invalid = completed_response({**valid_model_output(), "verdict": "建议今天继续训练并保持观察"})
+        transport = MockTransport([invalid, invalid, invalid])
+        with self.assertRaises(DeepSeekError) as raised:
+            DeepSeekAnalyzer(self.config(), transport=transport).analyze(fit_context())
+        self.assertEqual(len(transport.calls), 3)
+        self.assertEqual(raised.exception.validation_code, "verdict_contract")
+        self.assertEqual(raised.exception.safe_metadata["jsonParseState"], "valid")
 
     def test_canonical_schema_is_generated_artifact(self):
         static = json.loads((ENGINE_ROOT / "schemas" / "structured_report.schema.json").read_text(encoding="utf-8"))
