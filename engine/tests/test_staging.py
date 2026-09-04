@@ -19,6 +19,7 @@ if str(HUB_ROOT / "scripts") not in sys.path:
 from ayu_report_engine.adapters.running_page import load_running_page_context, running_page_identity_exists
 from ayu_report_engine.analysis import FixtureAnalyzer
 from ayu_report_engine.deepseek import DeepSeekConfig
+from ayu_report_engine.skill_provenance import load_skill_lock
 from generate_report import manifest_entry, replace_report_and_manifest
 import publish_report as publication
 import deploy_pages as pages
@@ -45,12 +46,12 @@ class StagingBuildTests(unittest.TestCase):
         entry = manifest_entry(self.report, self.config, "2030-03-05T00:00:00Z")
         self.assertEqual(entry["runId"], "1900000000000")
         self.assertEqual(entry["localDate"], self.context.local_date)
-        self.assertEqual(entry["hubVersion"], "0.4.0")
+        self.assertEqual(entry["hubVersion"], "0.4.1")
         self.assertEqual(entry["engineCommit"], "hub-test-commit")
         self.assertEqual(entry["reasoningEffort"], "low")
         self.assertEqual(entry["dataSource"], "coros-mcp")
-        self.assertEqual(entry["skillContractVersion"], "1.0.0")
-        self.assertEqual(entry["skillSourceCommit"], "98e4fb3b677e9bf3a6a120c11093c4ce1bcc3f37")
+        self.assertEqual(entry["skillContractVersion"], "1.1.0")
+        self.assertEqual(entry["skillSourceCommit"], load_skill_lock()["sourceCommit"])
         self.assertEqual(entry["collectorContractVersion"], "coros-daily-bundle-v1")
 
     def test_running_page_identity_guard_does_not_require_training_fields(self) -> None:

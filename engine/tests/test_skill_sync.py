@@ -34,7 +34,7 @@ class SkillSyncTests(unittest.TestCase):
 
     def test_prompt_and_manifest_provenance_use_the_local_lock(self) -> None:
         provenance = skill_manifest_provenance()
-        self.assertEqual(provenance["skillContractVersion"], "1.0.0")
+        self.assertEqual(provenance["skillContractVersion"], "1.1.0")
         self.assertEqual(provenance["skillSourceCommit"], load_skill_lock()["sourceCommit"])
         self.assertEqual(provenance["dataSource"], "coros-mcp")
         self.assertEqual(provenance["collectorContractVersion"], "coros-daily-bundle-v1")

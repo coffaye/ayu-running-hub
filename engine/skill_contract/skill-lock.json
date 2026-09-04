@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "sourceRepository": "coffaye/ayu-running-reports",
-  "sourceCommit": "98e4fb3b677e9bf3a6a120c11093c4ce1bcc3f37",
+  "sourceCommit": "3e057c521d82aa09534bde84410cc3b9b945de69",
   "files": {
     "skills/ayu-running-reports/SKILL.md": {
       "sourcePath": "skills/ayu-running-reports/SKILL.md",
       "vendoredPath": "engine/skill_contract/SKILL.md",
-      "blobSha": "a0c916056ccbc05abbf10bd1b5a13d96f67a2499"
+      "blobSha": "3b8f6516afb96cba9c4c50e3d3f9edd148c22915"
     },
     "skills/ayu-running-reports/references/design-system.md": {
       "sourcePath": "skills/ayu-running-reports/references/design-system.md",
       "vendoredPath": "engine/skill_contract/references/design-system.md",
-      "blobSha": "fe2b8497daec0614713e4d56a1a23726e8c0dd89"
+      "blobSha": "2c63d207cbf3cf4edaad2d6ec1464ab3d85480d2"
     },
     "skills/ayu-running-reports/references/png-export.md": {
       "sourcePath": "skills/ayu-running-reports/references/png-export.md",

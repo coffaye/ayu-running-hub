@@ -22,7 +22,7 @@ from typing import Any, Iterable
 
 
 SOURCE_REPOSITORY = "coffaye/ayu-running-reports"
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 LOCK_RELATIVE_PATH = Path("engine/skill_contract/skill-lock.json")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 IMPACT_CATEGORIES = ("METHODOLOGY", "VOICE", "DATA_CONTRACT", "DESIGN_SYSTEM", "PNG", "UNKNOWN")
