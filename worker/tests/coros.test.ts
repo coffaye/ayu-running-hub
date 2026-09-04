@@ -103,6 +103,7 @@ test('activity candidate extractor parses every numbered text block and keeps ex
   assert.deepEqual(activityArgumentsForTest({ records: [{ startTimestamp: '1788387238000', labelId: 'target', sportType: 100 }] }, runId), { labelId: 'target', sportType: 100 });
   assert.throws(() => activityArgumentsForTest(numberedTextRecords([other, third]), runId), (error: Error) => error instanceof CorosBrokerError && error.code === 'COROS_ACTIVITY_NOT_FOUND');
   assert.throws(() => activityArgumentsForTest(numberedTextRecords([target, { ...target, labelId: 'duplicate' }]), runId), (error: Error) => error instanceof CorosBrokerError && error.code === 'COROS_ACTIVITY_AMBIGUOUS');
+  assert.throws(() => activityArgumentsForTest({ records: [{ startTimestamp: runId, labelId: 'missing-sport-type' }] }, runId), (error: Error) => error instanceof CorosBrokerError && error.code === 'COROS_ACTIVITY_NOT_FOUND');
 });
 
 test('credential bootstrap stores only AES-GCM ciphertext and increments generations', async () => {

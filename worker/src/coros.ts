@@ -4,6 +4,7 @@ const COROS_CLIENT_VERSION = '0.1.0';
 const ACCESS_EXPIRY_SKEW_SECONDS = 120;
 const REPLAY_WINDOW_SECONDS = 5 * 60;
 const ACTIVITY_DISCOVERY_RETRY_DELAY_MS = 250;
+const RUNNING_SPORT_TYPE_CODES = new Set([100, 101, 102, 103]);
 const ENCRYPTED_FORMAT_VERSION = 1;
 const CREDENTIAL_SCHEMA_VERSION = 1;
 
@@ -833,7 +834,8 @@ export class CorosCredentialBroker {
     const exactMatches = extraction.candidates.filter((candidate) =>
       candidate.startTimestamp !== null
       && (candidate.startTimestamp === runMilliseconds || candidate.startTimestamp === runSeconds)
-      && (candidate.sportType === null || [100, 101, 102, 103].includes(candidate.sportType)),
+      && candidate.sportType !== null
+      && RUNNING_SPORT_TYPE_CODES.has(candidate.sportType),
     );
     const diagnostic: CorosActivityDiscoveryDiagnostic = {
       parser: extraction.parser,
@@ -844,7 +846,9 @@ export class CorosCredentialBroker {
     if (exactMatches.length !== 1) throw new CorosBrokerError('COROS_ACTIVITY_AMBIGUOUS', 409);
     const candidate = exactMatches[0];
     if (!candidate.labelId) throw new CorosBrokerError('COROS_ACTIVITY_ID_MISSING', 502);
-    return { activity: { labelId: candidate.labelId, sportType: candidate.sportType ?? 100 }, diagnostic };
+    const sportType = candidate.sportType;
+    if (sportType === null) throw new CorosBrokerError('COROS_ACTIVITY_NOT_FOUND', 404);
+    return { activity: { labelId: candidate.labelId, sportType }, diagnostic };
   }
 
   private activityArguments(result: unknown, runId: string): { labelId: string; sportType: number } {
