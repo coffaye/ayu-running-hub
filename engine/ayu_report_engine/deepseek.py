@@ -450,6 +450,27 @@ def _validation_failure_code(error: SchemaValidationError) -> str:
     return "other_validation"
 
 
+def _validation_failure_subcode(error: SchemaValidationError) -> str:
+    """Return an allowlisted repair hint without exposing validator text."""
+
+    message = str(error).lower()
+    for marker, subcode in (
+        ("unsupported heart-rate claim", "unsupported_heart_rate_claim"),
+        ("unsupported stability claim", "unsupported_stability_claim"),
+        ("unsupported load claim", "unsupported_load_claim"),
+        ("unsupported recovery claim", "unsupported_recovery_claim"),
+        ("unsupported workout claim", "unsupported_workout_claim"),
+        ("contradicts available lap data", "lap_data_contradiction"),
+        ("lacks supporting physiological facts", "unsupported_physiology_claim"),
+        ("must not contain raw numeric values", "narrative_raw_numeric"),
+        ("must not contain the literal null", "narrative_literal_null"),
+        ("must not contain schema field names", "narrative_schema_name"),
+    ):
+        if marker in message:
+            return subcode
+    return "validation_contract"
+
+
 def _is_semantic_validation_failure(error: SchemaValidationError) -> bool:
     """Compatibility helper for callers that only need retry eligibility."""
 
@@ -479,6 +500,7 @@ def _response_safe_metadata(
     json_parse_state: str = "not_attempted",
     decode_error: json.JSONDecodeError | None = None,
     validation_code: str | None = None,
+    validation_subcode: str | None = None,
 ) -> dict[str, Any]:
     """Build bounded diagnostics without retaining provider content."""
 
@@ -513,6 +535,7 @@ def _response_safe_metadata(
         "totalTokens": _usage(body, "total_tokens"),
         "incompleteReason": incomplete_reason,
         "validationCode": validation_code,
+        "validationSubcode": validation_subcode,
     }
 
 
@@ -521,6 +544,20 @@ FORMAT_CORRECTION_INSTRUCTIONS = (
     "且仅返回一个完整 JSON object；不要 markdown fence，不要解释文字，不要返回 patch；"
     "必须满足指定 json_schema，确保输出完整且不要截断。"
 )
+
+SEMANTIC_REPAIR_HINTS = {
+    "unsupported_heart_rate_claim": "没有可靠心率锚点时，不要推断心率区间、强度或高低，只保留输入明确提供的事实或 unknown。",
+    "unsupported_stability_claim": "没有可核验分圈或分段时，不要声称配速或输出稳定、均匀、漂移或失控。",
+    "unsupported_load_claim": "没有正式负荷事实时，load assessment 与负荷叙述保持 null 或 unknown。",
+    "unsupported_recovery_claim": "没有恢复事实时，recovery assessment、恢复时间与生理代价保持 null 或 unknown。",
+    "unsupported_workout_claim": "没有结构化课表时，不要声称完成训练、训练类型、训练目的或课表执行。",
+    "lap_data_contradiction": "只描述输入中存在的分圈事实，不要声称分圈或分段数据缺失。",
+    "unsupported_physiology_claim": "没有可靠心率和恢复锚点时，physiologyCost 保持 null 或 unknown。",
+    "narrative_raw_numeric": "所有面向用户的自然语言字段不得包含数字；数值只能放在结构化字段或 evidence value。",
+    "narrative_literal_null": "所有面向用户的自然语言字段不得写 literal null；未知值使用 null/unknown 结构化值。",
+    "narrative_schema_name": "所有面向用户的自然语言字段不得写 JSON/camelCase schema 字段名。",
+    "validation_contract": "任何无法从输入事实直接证明的字段都保持 null 或 unknown，不要猜测或补值。",
+}
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -731,9 +768,11 @@ class DeepSeekAnalyzer:
                     report = report_from_model_output(model_output, context)
                 except SchemaValidationError as exc:
                     validation_code = _validation_failure_code(exc)
+                    validation_subcode = _validation_failure_subcode(exc)
                     validation_metadata = {
                         **response_metadata,
                         "validationCode": validation_code,
+                        "validationSubcode": validation_subcode,
                         "transportRetryCount": transport_retry_count,
                         "formatRetryCount": format_retry_count,
                         "semanticRetryCount": semantic_retry_count,
@@ -769,6 +808,8 @@ class DeepSeekAnalyzer:
                             "没有可靠的结构化训练、心率、分圈、负荷或恢复锚点时，相关字段必须保持 null/unknown；"
                             "不要在任何用户文案中写数字、literal null 或 JSON/camelCase 字段名；"
                             "verdict 必须是 10–22 个可见字符的一句短结论。"
+                            + "具体修复提示："
+                            + SEMANTIC_REPAIR_HINTS[validation_subcode]
                             + completion_contract
                         )
                         continue
