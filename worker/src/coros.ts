@@ -393,9 +393,9 @@ const activityCandidateFromRecord = (record: JsonRecord): CorosActivityCandidate
 });
 
 const activityCandidateFromTextBlock = (block: string): CorosActivityCandidate => {
-  const timestampMatch = /^[ \t]*(?:startTimestamp|startTime|activityStartTimestamp)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
-  const sportMatch = /^[ \t]*(?:sport[ \t]*type(?:[ \t]*code)?|sport)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
-  const labelMatch = /^[ \t]*(?:label[ \t]*id|activity[ \t]*label[ \t]*id)[ \t]*[:=][ \t]*([A-Za-z0-9_-]+)/im.exec(block);
+  const timestampMatch = /(?:^|\r?\n)[^\r\n]*?\b(?:startTimestamp|startTime|activityStartTimestamp)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
+  const sportMatch = /(?:^|\r?\n)[^\r\n]*?\b(?:sport[ \t]*type(?:[ \t]*code)?|sport)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
+  const labelMatch = /(?:^|\r?\n)[^\r\n]*?\b(?:label[ \t]*id|activity[ \t]*label[ \t]*id)[ \t]*[:=][ \t]*([A-Za-z0-9_-]+)/im.exec(block);
   return {
     startTimestamp: timestampMatch ? Number(timestampMatch[1]) : null,
     labelId: labelMatch?.[1] ?? null,

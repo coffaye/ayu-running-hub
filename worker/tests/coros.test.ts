@@ -82,9 +82,9 @@ const numberedTextRecords = (records: Array<{ title: string; startTimestamp: str
   'Sport Records',
   ...records.flatMap((record, index) => [
     `${index + 1}. ${record.title} — summary`,
-    `   startTimestamp: ${record.startTimestamp}`,
-    `   LabelId: ${record.labelId}`,
-    `   SportType: ${record.sportType}`,
+    `   Time Window: startTimestamp=${record.startTimestamp}`,
+    `   Identity: LabelId: ${record.labelId}`,
+    `   Activity: SportType: ${record.sportType}`,
   ]),
 ].join('\n');
 
