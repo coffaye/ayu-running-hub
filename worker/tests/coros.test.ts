@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CorosCredentialBroker, COROS_REAUTH_REQUIRED, type SqlCursorLike, type SqlStorageLike } from '../src/coros.ts';
+import { CorosBrokerError, CorosCredentialBroker, COROS_REAUTH_REQUIRED, type SqlCursorLike, type SqlStorageLike } from '../src/coros.ts';
 
 const key = (seed: number): string => Buffer.from(Uint8Array.from({ length: 32 }, (_, index) => (seed + index) % 256)).toString('base64url');
 
@@ -71,6 +71,38 @@ const bootstrapBody = (reauthorize = false) => ({
   accessExpiresAt: 900,
   scope: 'mcp.tools openid offline_access',
   ...(reauthorize ? { reauthorize: true } : {}),
+});
+
+const activityArgumentsForTest = (result: unknown, runId: string) => {
+  const broker = new CorosCredentialBroker(stateFor(new FakeSql()), { COROS_CREDENTIAL_KEK: key(99) });
+  return (broker as unknown as { activityArguments: (value: unknown, identity: string) => { labelId: string; sportType: number } }).activityArguments(result, runId);
+};
+
+const numberedTextRecords = (records: Array<{ title: string; startTimestamp: string; labelId: string; sportType: number }>): string => [
+  'Sport Records',
+  ...records.flatMap((record, index) => [
+    `${index + 1}. ${record.title} — summary`,
+    `   startTimestamp: ${record.startTimestamp}`,
+    `   LabelId: ${record.labelId}`,
+    `   SportType: ${record.sportType}`,
+  ]),
+].join('\n');
+
+test('activity candidate extractor parses every numbered text block and keeps exact identity gates', () => {
+  const runId = '1788387238000';
+  const target = { title: 'Outdoor Run', startTimestamp: '1788387238000', labelId: 'target', sportType: 100 };
+  const other = { title: 'Indoor Run', startTimestamp: '1788387000000', labelId: 'other', sportType: 101 };
+  const third = { title: 'Recovery Run', startTimestamp: '1788387100000', labelId: 'third', sportType: 100 };
+  assert.deepEqual(activityArgumentsForTest(numberedTextRecords([target, other]), runId), { labelId: 'target', sportType: 100 });
+  assert.deepEqual(activityArgumentsForTest(numberedTextRecords([other, target]), runId), { labelId: 'target', sportType: 100 });
+  assert.deepEqual(activityArgumentsForTest(numberedTextRecords([other, third, target]), runId), { labelId: 'target', sportType: 100 });
+  assert.deepEqual(activityArgumentsForTest({ records: [
+    { startTimestamp: '1788387000000', labelId: 'other', sportType: 101 },
+    { startTimestamp: '1788387238', labelId: 'target', sportType: 100 },
+  ] }, runId), { labelId: 'target', sportType: 100 });
+  assert.deepEqual(activityArgumentsForTest({ records: [{ startTimestamp: '1788387238000', labelId: 'target', sportType: 100 }] }, runId), { labelId: 'target', sportType: 100 });
+  assert.throws(() => activityArgumentsForTest(numberedTextRecords([other, third]), runId), (error: Error) => error instanceof CorosBrokerError && error.code === 'COROS_ACTIVITY_NOT_FOUND');
+  assert.throws(() => activityArgumentsForTest(numberedTextRecords([target, { ...target, labelId: 'duplicate' }]), runId), (error: Error) => error instanceof CorosBrokerError && error.code === 'COROS_ACTIVITY_AMBIGUOUS');
 });
 
 test('credential bootstrap stores only AES-GCM ciphertext and increments generations', async () => {
@@ -169,6 +201,7 @@ test('probe uses real MCP-shaped JSON/SSE responses, fixed read-only tools, and 
 
 test('daily bundle normalizes detail, laps, dated load, plans, and excludes historical current recovery', async () => {
   const sql = new FakeSql();
+  let sportRecordQueries = 0;
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).endsWith('/oauth2/token')) return Response.json({ error: 'unexpected refresh' }, { status: 400 });
     const body = JSON.parse(String(init?.body)) as { method: string; params: { name?: string; arguments?: Record<string, unknown> } };
@@ -181,7 +214,13 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
     const name = body.params.name;
     const args = body.params.arguments ?? {};
     let result: unknown;
-    if (name === 'querySportRecords') result = { records: [{ startTimestamp: '1787870493000', labelId: 'hidden', sportType: 100, title: '稳态跑' }] };
+    if (name === 'querySportRecords') {
+      sportRecordQueries += 1;
+      result = { content: [{ type: 'text', text: numberedTextRecords([
+        { title: 'Indoor Run', startTimestamp: '1787870400000', labelId: 'other', sportType: 101 },
+        { title: 'Outdoor Run', startTimestamp: '1787870493000', labelId: 'hidden', sportType: 100 },
+      ]) }] };
+    }
     else if (name === 'getActivityDetail') result = { distance: 11.28, duration: 3600, movingPace: 342, averagePace: 345, averageHeartRate: 146, cadence: 178, strideLength: 1.02, power: 197, elevationGain: 55, calories: 760, trainingLoad: 118, aerobicTrainingEffect: 3.1, anaerobicTrainingEffect: 0.4, trainingFocus: '有氧耐力', performance: '良好', perceivedEffort: '中等' };
     else if (name === 'queryActivityLapData') result = { laps: [
       { lapIndex: 1, distance: 1, duration: 330, pace: 330, avgHr: 140, maxHr: 151, power: 190, cadence: 177 },
@@ -198,6 +237,7 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   const broker = new CorosCredentialBroker(stateFor(sql), { COROS_CREDENTIAL_KEK: key(7) }, { fetcher, now: () => 1788000000 });
   await broker.bootstrap({ ...bootstrapBody(), accessExpiresAt: 9000000000 });
   const bundle = await broker.dailyBundle('1787870493000', 'bundle-1');
+  assert.equal(sportRecordQueries, 1);
   assert.equal(bundle.schemaVersion, '1.0');
   assert.equal(bundle.reportDate, '2026-08-28');
   assert.equal(bundle.activity.distanceKm, 11.28);
@@ -214,6 +254,7 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   assert.equal(bundle.recovery?.reportDateAligned, false);
   assert.equal(bundle.recovery?.recoveryPercent, null);
   assert.equal(bundle.fitness?.runningFitness, 62.5);
+  assert.deepEqual(bundle.diagnostics?.activityDiscovery, { parser: 'text', recordCount: 2, exactMatchCount: 1 });
   const serialized = JSON.stringify(bundle);
   assert.equal(serialized.includes('labelId'), false);
   assert.equal(serialized.includes('hidden'), false);

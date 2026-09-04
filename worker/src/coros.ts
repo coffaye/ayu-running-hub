@@ -174,6 +174,12 @@ export interface CorosSafeDiagnostic {
   textPreview: string | null;
 }
 
+interface CorosActivityDiscoveryDiagnostic {
+  parser: 'text' | 'structured';
+  recordCount: number;
+  exactMatchCount: number;
+}
+
 export interface CorosDailyBundle {
   schemaVersion: '1.0';
   runId: string;
@@ -205,6 +211,7 @@ export interface CorosDailyBundle {
     tools: Record<string, string>;
   };
   diagnostics?: {
+    activityDiscovery: CorosActivityDiscoveryDiagnostic;
     activityDetail: CorosSafeDiagnostic;
     laps: CorosSafeDiagnostic;
     todaySchedule: CorosSafeDiagnostic | null;
@@ -336,6 +343,14 @@ const firstValue = (value: unknown, aliases: string[]): unknown => {
   return null;
 };
 
+const directValue = (value: JsonRecord, aliases: string[]): unknown => {
+  const wanted = new Set(aliases.map(normalizedKey));
+  for (const [key, candidate] of Object.entries(value)) {
+    if (wanted.has(normalizedKey(key))) return embeddedJson(candidate);
+  }
+  return null;
+};
+
 const numberValue = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
@@ -357,6 +372,34 @@ const timestampSeconds = (value: unknown): number | null => {
     if (Number.isFinite(parsed)) return parsed / 1000;
   }
   return null;
+};
+
+interface CorosActivityCandidate {
+  startTimestamp: number | null;
+  labelId: string | null;
+  sportType: number | null;
+}
+
+interface CorosActivityCandidateExtraction {
+  parser: CorosActivityDiscoveryDiagnostic['parser'];
+  candidates: CorosActivityCandidate[];
+}
+
+const activityCandidateFromRecord = (record: JsonRecord): CorosActivityCandidate => ({
+  startTimestamp: timestampSeconds(directValue(record, ['startTimestamp', 'startTime', 'activityStartTimestamp'])),
+  labelId: stringValue(directValue(record, ['labelId', 'activityLabelId'])),
+  sportType: numberValue(directValue(record, ['sportType', 'sportTypeCode', 'sport'])),
+});
+
+const activityCandidateFromTextBlock = (block: string): CorosActivityCandidate => {
+  const timestampMatch = /^[ \t]*(?:startTimestamp|startTime|activityStartTimestamp)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
+  const sportMatch = /^[ \t]*(?:sport[ \t]*type(?:[ \t]*code)?|sport)[ \t]*[:=][ \t]*(\d+)/im.exec(block);
+  const labelMatch = /^[ \t]*(?:label[ \t]*id|activity[ \t]*label[ \t]*id)[ \t]*[:=][ \t]*([A-Za-z0-9_-]+)/im.exec(block);
+  return {
+    startTimestamp: timestampMatch ? Number(timestampMatch[1]) : null,
+    labelId: labelMatch?.[1] ?? null,
+    sportType: sportMatch ? Number(sportMatch[1]) : null,
+  };
 };
 
 const durationSeconds = (value: unknown, key = ''): number | null => {
@@ -769,42 +812,43 @@ export class CorosCredentialBroker {
     return { objectKeys, textPreview: textPreview || null };
   }
 
-  private activityArguments(result: unknown, runId: string): { labelId: string; sportType: number } {
+  private extractActivityCandidates(result: unknown): CorosActivityCandidateExtraction {
+    const structuredCandidates = collectObjects(result)
+      .map(activityCandidateFromRecord)
+      .filter((candidate) => candidate.startTimestamp !== null);
+    if (structuredCandidates.length) return { parser: 'structured', candidates: structuredCandidates };
+
+    const text = this.textFromResult(result);
+    const numberedBlocks = text.split(/(?=^[ \t]*\d+\.\s+)/m);
+    const textCandidates = (numberedBlocks.length > 1 ? numberedBlocks : [text])
+      .map(activityCandidateFromTextBlock)
+      .filter((candidate) => candidate.startTimestamp !== null);
+    return { parser: 'text', candidates: textCandidates };
+  }
+
+  private resolveActivity(result: unknown, runId: string): { activity: { labelId: string; sportType: number }; diagnostic: CorosActivityDiscoveryDiagnostic } {
     const runMilliseconds = Number(runId);
     const runSeconds = Math.floor(runMilliseconds / 1000);
-    const candidates = collectObjects(result).filter((record) => {
-      const timestamp = timestampSeconds(firstValue(record, ['startTimestamp', 'startTime', 'activityStartTimestamp']));
-      const sportType = numberValue(firstValue(record, ['sportType', 'sportTypeCode', 'sport']));
-      return timestamp !== null
-        && (timestamp === runMilliseconds || timestamp === runSeconds)
-        && (sportType === null || [100, 101, 102, 103].includes(sportType));
-    });
-    const unique = new Map<string, JsonRecord>();
-    for (const candidate of candidates) {
-      const label = stringValue(firstValue(candidate, ['labelId', 'activityLabelId']));
-      if (label) unique.set(label, candidate);
-    }
-    if (!unique.size) {
-      const text = this.textFromResult(result);
-      const blocks = text.split(/\n(?=#\.\s)/).filter((block) => /startTimestamp\s*[=:]/i.test(block));
-      for (const block of blocks) {
-        const timestampMatch = /startTimestamp\s*[=:]\s*(\d+)/i.exec(block);
-        const timestamp = timestampMatch ? Number(timestampMatch[1]) : null;
-        if (timestamp !== runMilliseconds && timestamp !== runSeconds) continue;
-        const sportMatch = /SportType\s*[=:]\s*(\d+)/i.exec(block);
-        const sportType = sportMatch ? Number(sportMatch[1]) : 100;
-        if (![100, 101, 102, 103].includes(sportType)) continue;
-        const labelMatch = /LabelId\s*[=:]\s*([A-Za-z0-9_-]+)/i.exec(block);
-        if (labelMatch) unique.set(labelMatch[1], { labelId: labelMatch[1], sportType });
-      }
-      if (!unique.size) throw new CorosBrokerError('COROS_ACTIVITY_NOT_FOUND', 404);
-    }
-    if (unique.size !== 1) throw new CorosBrokerError('COROS_ACTIVITY_AMBIGUOUS', 409);
-    const candidate = [...unique.values()][0];
-    const labelId = stringValue(firstValue(candidate, ['labelId', 'activityLabelId']));
-    if (!labelId) throw new CorosBrokerError('COROS_ACTIVITY_ID_MISSING', 502);
-    const sportType = numberValue(firstValue(candidate, ['sportType', 'sportTypeCode', 'sport'])) ?? 100;
-    return { labelId, sportType };
+    const extraction = this.extractActivityCandidates(result);
+    const exactMatches = extraction.candidates.filter((candidate) =>
+      candidate.startTimestamp !== null
+      && (candidate.startTimestamp === runMilliseconds || candidate.startTimestamp === runSeconds)
+      && (candidate.sportType === null || [100, 101, 102, 103].includes(candidate.sportType)),
+    );
+    const diagnostic: CorosActivityDiscoveryDiagnostic = {
+      parser: extraction.parser,
+      recordCount: extraction.candidates.length,
+      exactMatchCount: exactMatches.length,
+    };
+    if (!exactMatches.length) throw new CorosBrokerError('COROS_ACTIVITY_NOT_FOUND', 404);
+    if (exactMatches.length !== 1) throw new CorosBrokerError('COROS_ACTIVITY_AMBIGUOUS', 409);
+    const candidate = exactMatches[0];
+    if (!candidate.labelId) throw new CorosBrokerError('COROS_ACTIVITY_ID_MISSING', 502);
+    return { activity: { labelId: candidate.labelId, sportType: candidate.sportType ?? 100 }, diagnostic };
+  }
+
+  private activityArguments(result: unknown, runId: string): { labelId: string; sportType: number } {
+    return this.resolveActivity(result, runId).activity;
   }
 
   private metric(value: unknown, aliases: string[], kind: 'distance' | 'duration' | 'pace' | 'number'): { value: number | null; display: string | null } {
@@ -1211,8 +1255,9 @@ export class CorosCredentialBroker {
     };
     let records = await this.callTool(token, 'querySportRecords', sportRecordArguments, 3);
     let activity: { labelId: string; sportType: number };
+    let activityDiscovery: CorosActivityDiscoveryDiagnostic;
     try {
-      activity = this.activityArguments(records, runId);
+      ({ activity, diagnostic: activityDiscovery } = this.resolveActivity(records, runId));
     } catch (error) {
       if (!(error instanceof CorosBrokerError) || error.code !== 'COROS_ACTIVITY_NOT_FOUND') throw error;
       // COROS may briefly omit a just-synced historical activity from the date list.
@@ -1226,7 +1271,7 @@ export class CorosCredentialBroker {
       }));
       await new Promise<void>((resolve) => setTimeout(resolve, ACTIVITY_DISCOVERY_RETRY_DELAY_MS));
       records = await this.callTool(token, 'querySportRecords', sportRecordArguments, 13);
-      activity = this.activityArguments(records, runId);
+      ({ activity, diagnostic: activityDiscovery } = this.resolveActivity(records, runId));
     }
     const detail = await this.callTool(token, 'getActivityDetail', activity, 4);
     const lapsResult = await this.callTool(token, 'queryActivityLapData', activity, 5);
@@ -1312,6 +1357,7 @@ export class CorosCredentialBroker {
         },
       },
       diagnostics: {
+        activityDiscovery,
         activityDetail: this.safeDiagnostic(detail),
         laps: this.safeDiagnostic(lapsResult),
         todaySchedule: todayResult ? this.safeDiagnostic(todayResult) : null,
