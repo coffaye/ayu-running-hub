@@ -24,7 +24,7 @@ if str(ENGINE_ROOT) not in sys.path:
 
 from ayu_report_engine.adapters.running_page import running_page_identity_exists
 from ayu_report_engine.bundle import context_from_coros_bundle
-from ayu_report_engine.coros_collector_client import fetch_coros_daily_bundle_from_env
+from ayu_report_engine.coros_collector_client import CollectorError, fetch_coros_daily_bundle_from_env
 from ayu_report_engine.deepseek import DeepSeekAnalyzer, DeepSeekConfig
 from ayu_report_engine.render import render_html
 from ayu_report_engine.report import StructuredReport, validate_structured_report
@@ -209,7 +209,12 @@ def main(argv: list[str] | None = None) -> int:
             request_id=args.request_id,
         )
     except Exception as exc:
-        print(json.dumps({"status": "failure", "error": str(exc), "requestId": args.request_id}), file=sys.stderr)
+        failure: dict[str, Any] = {"status": "failure", "error": str(exc), "requestId": args.request_id}
+        if isinstance(exc, CollectorError):
+            failure["collectorCategory"] = exc.category
+            if exc.code is not None:
+                failure["collectorCode"] = exc.code
+        print(json.dumps(failure, ensure_ascii=False), file=sys.stderr)
         return 1
     print(json.dumps({"status": "success", **result}, ensure_ascii=False))
     return 0

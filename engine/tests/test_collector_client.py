@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import json
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 import unittest
 
 from ayu_report_engine.coros_collector_client import (
@@ -131,6 +132,33 @@ class CollectorClientTests(unittest.TestCase):
                 opener=lambda *_args: self.fail("network must not be called"),
             )
         self.assertEqual(raised.exception.category, "configuration")
+
+    def test_worker_activity_not_found_code_is_safe_and_not_retried(self) -> None:
+        calls = 0
+
+        def opener(_request, *, timeout):
+            nonlocal calls
+            calls += 1
+            self.assertEqual(timeout, 90.0)
+            raise HTTPError(
+                "https://collector.example",
+                404,
+                "not found",
+                {},
+                io.BytesIO(b'{"error":"COROS_ACTIVITY_NOT_FOUND"}'),
+            )
+
+        with self.assertRaises(CollectorError) as raised:
+            fetch_coros_daily_bundle(
+                "1788387238000",
+                "phase6-test-safe-code",
+                config=CollectorConfig("https://collector.example", "collector-secret"),
+                timestamp=1_790_000_000,
+                opener=opener,
+            )
+        self.assertEqual(calls, 1)
+        self.assertEqual(raised.exception.category, "activity_not_found")
+        self.assertEqual(raised.exception.code, "COROS_ACTIVITY_NOT_FOUND")
 
 
 if __name__ == "__main__":

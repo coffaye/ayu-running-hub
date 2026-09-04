@@ -22,6 +22,18 @@ from .identity import normalize_run_id
 COLLECTOR_PATH = "/internal/coros/daily-bundle"
 DEFAULT_TIMEOUT_SECONDS = 90.0
 USER_AGENT = "ayu-running-hub-production-collector"
+SAFE_COLLECTOR_ERROR_CODES = frozenset(
+    {
+        "COROS_ACTIVITY_NOT_FOUND",
+        "COROS_ACTIVITY_AMBIGUOUS",
+        "COROS_ACTIVITY_ID_MISSING",
+        "COROS_BUNDLE_INVALID",
+        "COROS_REQUIRED_TOOL_MISSING",
+        "COROS_MCP_CALL_FAILED",
+        "COROS_MCP_UNAVAILABLE",
+        "COROS_REAUTH_REQUIRED",
+    }
+)
 
 
 class CollectorError(RuntimeError):
@@ -33,10 +45,12 @@ class CollectorError(RuntimeError):
         *,
         category: str,
         status_code: int | None = None,
+        code: str | None = None,
     ) -> None:
         super().__init__(message)
         self.category = category
         self.status_code = status_code
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -129,6 +143,27 @@ def _status_category(status: int) -> str:
     return "http_error"
 
 
+def _safe_error_code(raw: bytes) -> str | None:
+    """Parse only the Worker-owned allowlisted error code, never the body text."""
+
+    try:
+        value = json.loads(raw[:4096].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    code = value.get("error")
+    return code if isinstance(code, str) and code in SAFE_COLLECTOR_ERROR_CODES else None
+
+
+def _category_for_code(status: int, code: str | None) -> str:
+    if code == "COROS_ACTIVITY_NOT_FOUND":
+        return "activity_not_found"
+    if code == "COROS_ACTIVITY_AMBIGUOUS":
+        return "ambiguous_activity"
+    return _status_category(status)
+
+
 def _response_status(response: Any) -> int:
     status = getattr(response, "status", None)
     if isinstance(status, int):
@@ -193,14 +228,16 @@ def fetch_coros_daily_bundle(
             status = _response_status(response)
             raw = response.read()
     except HTTPError as exc:
+        code = None
         try:
-            exc.read()
+            code = _safe_error_code(exc.read(4096))
         except Exception:
             pass
         raise CollectorError(
             f"COROS collector returned HTTP {exc.code}",
-            category=_status_category(exc.code),
+            category=_category_for_code(exc.code, code),
             status_code=exc.code,
+            code=code,
         ) from None
     except (TimeoutError, socket.timeout):
         raise CollectorError("COROS collector timed out", category="timeout") from None
@@ -208,10 +245,12 @@ def fetch_coros_daily_bundle(
         raise CollectorError("COROS collector network request failed", category="network") from None
 
     if status < 200 or status >= 300:
+        code = _safe_error_code(raw)
         raise CollectorError(
             f"COROS collector returned HTTP {status}",
-            category=_status_category(status),
+            category=_category_for_code(status, code),
             status_code=status,
+            code=code,
         )
     try:
         value = json.loads(raw.decode("utf-8"))

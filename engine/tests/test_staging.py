@@ -69,7 +69,7 @@ class StagingBuildTests(unittest.TestCase):
         self.assertIn("context_from_coros_bundle", generator)
         self.assertIn("PHASE6_COLLECTOR_URL", workflow)
         self.assertIn("AYU_COLLECTOR_SHARED_SECRET", workflow)
-        self.assertIn("DEEPSEEK_TIMEOUT_SECONDS: ${{ vars.DEEPSEEK_TIMEOUT_SECONDS || '90' }}", workflow)
+        self.assertIn("DEEPSEEK_TIMEOUT_SECONDS: '90'", workflow)
         self.assertIn("RUNNING_PAGE_BRANCH: master", workflow)
 
     def test_atomic_replace_updates_html_and_manifest(self) -> None:

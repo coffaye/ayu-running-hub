@@ -3,6 +3,7 @@ const COROS_CLIENT_NAME = 'ayu-running-hub-phase6';
 const COROS_CLIENT_VERSION = '0.1.0';
 const ACCESS_EXPIRY_SKEW_SECONDS = 120;
 const REPLAY_WINDOW_SECONDS = 5 * 60;
+const ACTIVITY_DISCOVERY_RETRY_DELAY_MS = 250;
 const ENCRYPTED_FORMAT_VERSION = 1;
 const CREDENTIAL_SCHEMA_VERSION = 1;
 
@@ -1196,7 +1197,7 @@ export class CorosCredentialBroker {
     const required = ['querySportRecords', 'getActivityDetail', 'queryActivityLapData', 'queryTrainingLoadAssessment', 'queryRecoveryStatus', 'queryTrainingSchedule'];
     if (required.some((name) => !toolNames.has(name))) throw new CorosBrokerError('COROS_REQUIRED_TOOL_MISSING', 502);
 
-    const records = await this.callTool(token, 'querySportRecords', {
+    const sportRecordArguments = {
       startDate: compactReportDate,
       endDate: compactReportDate,
       limit: 20,
@@ -1207,8 +1208,26 @@ export class CorosCredentialBroker {
       maxDurationMinutes: 0,
       maxAveragePace: '',
       sportTypeCodes: [65535],
-    }, 3);
-    const activity = this.activityArguments(records, runId);
+    };
+    let records = await this.callTool(token, 'querySportRecords', sportRecordArguments, 3);
+    let activity: { labelId: string; sportType: number };
+    try {
+      activity = this.activityArguments(records, runId);
+    } catch (error) {
+      if (!(error instanceof CorosBrokerError) || error.code !== 'COROS_ACTIVITY_NOT_FOUND') throw error;
+      // COROS may briefly omit a just-synced historical activity from the date list.
+      // Retry this exact window once; never broaden the window or fuzzy-match a run.
+      console.warn(JSON.stringify({
+        event: 'coros_activity_discovery_retry',
+        runId,
+        requestId,
+        stage: 'querySportRecords',
+        code: 'COROS_ACTIVITY_NOT_FOUND',
+      }));
+      await new Promise<void>((resolve) => setTimeout(resolve, ACTIVITY_DISCOVERY_RETRY_DELAY_MS));
+      records = await this.callTool(token, 'querySportRecords', sportRecordArguments, 13);
+      activity = this.activityArguments(records, runId);
+    }
     const detail = await this.callTool(token, 'getActivityDetail', activity, 4);
     const lapsResult = await this.callTool(token, 'queryActivityLapData', activity, 5);
     let activityFacts = { ...this.activityFacts({ detail, summary: records }, records), sportType: activity.sportType };

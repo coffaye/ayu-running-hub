@@ -219,3 +219,34 @@ test('daily bundle normalizes detail, laps, dated load, plans, and excludes hist
   assert.equal(serialized.includes('hidden'), false);
   assert.equal(bundle.diagnostics?.laps.objectKeys.includes('avgHr'), true);
 });
+
+test('daily bundle retries one missing exact historical activity without widening the date window', async () => {
+  const sql = new FakeSql();
+  let sportRecordQueries = 0;
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/oauth2/token')) return Response.json({ error: 'unexpected refresh' }, { status: 400 });
+    const body = JSON.parse(String(init?.body)) as { method: string; params: { name?: string; arguments?: Record<string, unknown> } };
+    if (body.method === 'initialize') return Response.json({ jsonrpc: '2.0', id: 1, result: {} });
+    if (body.method === 'tools/list') return Response.json({ jsonrpc: '2.0', id: 2, result: { tools: [
+      { name: 'querySportRecords' }, { name: 'getActivityDetail' }, { name: 'queryActivityLapData' },
+      { name: 'queryTrainingLoadAssessment' }, { name: 'queryRecoveryStatus' }, { name: 'queryTrainingSchedule' },
+    ] } });
+    const name = body.params.name;
+    let result: unknown = {};
+    if (name === 'querySportRecords') {
+      sportRecordQueries += 1;
+      assert.equal(body.params.arguments?.startDate, '20260903');
+      assert.equal(body.params.arguments?.endDate, '20260903');
+      result = sportRecordQueries === 1
+        ? { records: [] }
+        : { records: [{ startTimestamp: '1788387238000', labelId: 'hidden', sportType: 100 }] };
+    }
+    return Response.json({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } });
+  }) as typeof fetch;
+  const broker = new CorosCredentialBroker(stateFor(sql), { COROS_CREDENTIAL_KEK: key(8) }, { fetcher, now: () => 1788000000 });
+  await broker.bootstrap({ ...bootstrapBody(), accessExpiresAt: 9000000000 });
+  const bundle = await broker.dailyBundle('1788387238000', 'bundle-retry-1');
+  assert.equal(sportRecordQueries, 2);
+  assert.equal(bundle.runId, '1788387238000');
+  assert.equal(bundle.reportDate, '2026-09-03');
+});
