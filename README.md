@@ -23,10 +23,20 @@ provider responses are not stored.
 
 ## Version identity
 
-- Hub / engine: `0.2.0`
+The authoritative runtime versions are defined in
+[`engine/ayu_report_engine/version.py`](engine/ayu_report_engine/version.py).
+The current snapshot is:
+
+- Hub / engine: `0.4.2`
 - Structured schema: `1.1`
-- DeepSeek prompt: `ayu-daily-v5`
-- Renderer: `ayu-html-canvas-v1`
+- DeepSeek prompt: `ayu-daily-v7`
+- Renderer: `ayu-html-canvas-v3.1`
+- Skill contract: `1.1.0`; its pinned source and allowlisted files are recorded in
+  [`engine/skill_contract/skill-lock.json`](engine/skill_contract/skill-lock.json).
+
+The production engine lives in `ayu-running-hub/engine`. The separate
+`ayu-running-reports/engine` is a standalone/reference implementation with its
+own versions; it is not the current production runtime.
 
 Every future caller should pin this repository to a tag or commit SHA and set
 `AYU_ENGINE_COMMIT` to the pinned commit. Do not silently follow `main` in
@@ -42,6 +52,11 @@ python -m pip install -e ".[test]"
 python -m pytest -q
 python -m compileall -q .
 ```
+
+The engine needs the IANA time zone database when converting COROS bundles with
+`ZoneInfo("Asia/Shanghai")`. Its runtime `tzdata` dependency provides the standard
+fallback on Windows and other systems without that database; `zoneinfo` still
+prefers system data when available. No manual `tzdata` installation is required.
 
 Fixture-only report generation never makes network calls. The explicit
 DeepSeek smoke and benchmark commands require `--live` and a local
