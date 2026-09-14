@@ -1,0 +1,60 @@
+{
+  "contractVersion": "1.2-candidate",
+  "structuredInsightVersion": "structured-insight-v1",
+  "insights": [
+    {
+      "id": "main-output",
+      "category": "output",
+      "interpretation": "主体前后段外部输出基本保持。",
+      "evidenceRefs": [
+        "segments.first10k.durationSec",
+        "segments.second10k.durationSec",
+        "segments.first10k.averagePowerW",
+        "segments.second10k.averagePowerW",
+        "comparisons.first10k_vs_second10k.durationDeltaSec"
+      ],
+      "confidence": "high",
+      "uncertainty": null
+    },
+    {
+      "id": "main-cost",
+      "category": "cost",
+      "interpretation": "在主体输出基本保持的同时，后段心率反应升高。",
+      "evidenceRefs": [
+        "segments.first10k.averageHrBpm",
+        "segments.second10k.averageHrBpm",
+        "comparisons.first10k_vs_second10k.heartRateDeltaBpm",
+        "comparisons.first10k_vs_second10k.powerDeltaW"
+      ],
+      "confidence": "medium",
+      "uncertainty": "现有记录不足以确定具体原因。"
+    },
+    {
+      "id": "finish-execution",
+      "category": "execution",
+      "interpretation": "主体结束后仍有收尾与短加速结构。",
+      "evidenceRefs": [
+        "finish.segment.durationSec",
+        "finish.segment.averagePaceSecPerKm",
+        "repetitions.detected.count",
+        "repetitions.detected.rep01.durationSec",
+        "repetitions.detected.rep02.durationSec",
+        "repetitions.detected.rep03.durationSec"
+      ],
+      "confidence": "high",
+      "uncertainty": null
+    },
+    {
+      "id": "cause-uncertain",
+      "category": "uncertainty",
+      "interpretation": "现有数据不足以确定心率抬升的具体原因。",
+      "evidenceRefs": [
+        "segments.first10k.averageHrBpm",
+        "segments.second10k.averageHrBpm",
+        "comparisons.first10k_vs_second10k.heartRateDeltaBpm"
+      ],
+      "confidence": "medium",
+      "uncertainty": "环境、补给等上下文未提供。"
+    }
+  ]
+}
