@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Phase A Golden Corpus registry. Existing real reports are references only; no report or COROS payload was generated.",
+  "baseline": {
+    "hubLocalHead": "697b1e08e98b6e8c3e6a81c91985519615ab290c",
+    "hubOriginMain": "58d0f54b99f6678b1753e75630d7144a6e49653c",
+    "skillLocalHead": "3e057c521d82aa09534bde84410cc3b9b945de69",
+    "skillOriginMain": "c5dbfa8a1ca029691dd7ce3c0c5b1427794b598c",
+    "runningPageHead": "53e4dd4bc3cff2ccfb8e73b7deac6563016d4833"
+  },
+  "cases": [
+    {
+      "id": "golden-2026-09-13",
+      "runId": "1789255559000",
+      "date": "2026-09-13",
+      "category": "long-progressive-threshold-like",
+      "whySelected": "Primary parity case: long half-marathon主体 plus 3x200 finish, with a native Skill reference and a Production Page report.",
+      "dataAvailability": {
+        "productionReport": "REAL_PRODUCTION_REPORT",
+        "nativeSkillReference": "REAL_LOCAL_REFERENCE",
+        "sanitizedCorosBundle": "NOT_COMMITTED",
+        "productionManifest": "AVAILABLE"
+      },
+      "nativeSkillReference": {
+        "kind": "localReference",
+        "portable": false,
+        "pathHint": "outputs/ayu_running_daily_2026-09-13.html"
+      },
+      "productionReport": "public/reports/daily/2026-09-13/1789255559000.html"
+    },
+    {
+      "id": "production-2026-08-28",
+      "runId": "1787870493000",
+      "date": "2026-08-28",
+      "category": "steady-aerobic",
+      "whySelected": "Real Page report labelled as a one-hour aerobic session, with continuous pacing and a visible load context.",
+      "dataAvailability": {
+        "productionReport": "REAL_PRODUCTION_REPORT",
+        "nativeSkillReference": "MISSING",
+        "sanitizedCorosBundle": "FIXTURE_ONLY_AND_POLICY_MISMATCH",
+        "productionManifest": "AVAILABLE"
+      },
+      "fixture": "engine/tests/fixtures/coros_daily_bundle_1787870493000.json",
+      "fixtureNote": "The fixture is sanitized and useful for contract tests, but is UNMATCHED with no todaySchedule; it must not be treated as the same source as the Page's matched-plan report.",
+      "productionReport": "public/reports/daily/2026-08-28/1787870493000.html"
+    },
+    {
+      "id": "production-2026-09-01",
+      "runId": "1788214647000",
+      "date": "2026-09-01",
+      "category": "structured-interval",
+      "whySelected": "Real Page report with a named 800x2+1000x2+1500x2 session and alternating faster/slower lap pattern.",
+      "dataAvailability": {
+        "productionReport": "REAL_PRODUCTION_REPORT",
+        "nativeSkillReference": "MISSING",
+        "sanitizedCorosBundle": "MISSING",
+        "productionManifest": "AVAILABLE"
+      },
+      "productionReport": "public/reports/daily/2026-09-01/1788214647000.html"
+    },
+    {
+      "id": "production-2026-08-26",
+      "runId": "1787696516000",
+      "date": "2026-08-26",
+      "category": "no-plan-unknown-intent",
+      "whySelected": "Real Page report explicitly keeps training purpose and completion unknown because no structured plan is available.",
+      "dataAvailability": {
+        "productionReport": "REAL_PRODUCTION_REPORT",
+        "nativeSkillReference": "MISSING",
+        "sanitizedCorosBundle": "MISSING",
+        "productionManifest": "AVAILABLE_BUT_OLDER_ENGINE"
+      },
+      "productionReport": "public/reports/daily/2026-08-26/1787696516000.html"
+    },
+    {
+      "id": "production-2025-12-31",
+      "runId": "1767134280000",
+      "date": "2025-12-31",
+      "category": "incomplete-partial-ambiguous",
+      "whySelected": "Real Page report whose headline is explicitly limited by missing segmentation and incomplete data visibility.",
+      "dataAvailability": {
+        "productionReport": "REAL_PRODUCTION_REPORT",
+        "nativeSkillReference": "MISSING",
+        "sanitizedCorosBundle": "MISSING",
+        "productionManifest": "AVAILABLE_BUT_OLDER_ENGINE"
+      },
+      "productionReport": "public/reports/daily/2025-12-31/1767134280000.html"
+    }
+  ],
+  "gaps": [
+    {
+      "category": "steady-aerobic",
+      "status": "NATIVE_REFERENCE_MISSING",
+      "actionBefore_HARD_GOLDEN": "Generate or capture a native Skill reference from the same sanitized input in a later, explicitly authorized phase."
+    },
+    {
+      "category": "structured-interval",
+      "status": "NATIVE_REFERENCE_MISSING",
+      "actionBefore_HARD_GOLDEN": "Keep as a Production probe, not a native-parity hard assertion."
+    },
+    {
+      "category": "no-plan-unknown-intent",
+      "status": "NATIVE_REFERENCE_MISSING",
+      "actionBefore_HARD_GOLDEN": "Use for safety/unknown-boundary assertions until a native reference is available."
+    },
+    {
+      "category": "incomplete-partial-ambiguous",
+      "status": "NATIVE_REFERENCE_MISSING",
+      "actionBefore_HARD_GOLDEN": "Use for missing-data behavior assertions; do not infer a native desired narrative."
+    }
+  ]
+}
