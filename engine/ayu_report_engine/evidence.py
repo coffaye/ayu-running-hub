@@ -387,6 +387,30 @@ def _metric_value(segment: Mapping[str, Any], name: str) -> float | None:
     return _number(value)
 
 
+_QUALITY_RANK = {
+    "EXACT": 0,
+    "INTERPOLATED_FROM_LAP_AVERAGE": 1,
+    "PARTIAL_MISSING": 2,
+    "UNAVAILABLE": 3,
+}
+
+
+def _quality(value: object) -> str:
+    candidate = str(value) if value is not None else "UNAVAILABLE"
+    return candidate if candidate in _QUALITY_RANK else "UNAVAILABLE"
+
+
+def _combine_quality(*values: object) -> str:
+    """Propagate the least reliable quality without upgrading evidence."""
+
+    return max((_quality(value) for value in values), key=lambda value: _QUALITY_RANK[value], default="UNAVAILABLE")
+
+
+def _metric_quality(segment: Mapping[str, Any], name: str) -> str:
+    metric = segment.get("metrics", {}).get(name)
+    return _quality(metric.get("quality")) if isinstance(metric, Mapping) else "UNAVAILABLE"
+
+
 def compare_distance_windows(
     left: Mapping[str, Any],
     right: Mapping[str, Any],
@@ -395,9 +419,13 @@ def compare_distance_windows(
 ) -> dict[str, Any]:
     """Compute numeric differences only; never classify their meaning."""
 
+    _assert_safe(left, "left")
+    _assert_safe(right, "right")
     left_ref = str(left.get("ref", "segments.left"))
     right_ref = str(right.get("ref", "segments.right"))
     source = [left_ref, right_ref]
+    left_quality = _quality(left.get("quality"))
+    right_quality = _quality(right.get("quality"))
     left_distance = _metric_value(left, "distanceM")
     right_distance = _metric_value(right, "distanceM")
     same_distance = (
@@ -415,7 +443,11 @@ def compare_distance_windows(
         left_value = _metric_value(left, left_name)
         right_value = _metric_value(right, left_name)
         value = right_value - left_value if left_value is not None and right_value is not None else None
-        quality = "EXACT" if value is not None and left.get("quality") != "UNAVAILABLE" and right.get("quality") != "UNAVAILABLE" else "UNAVAILABLE"
+        quality = (
+            _combine_quality(left_quality, right_quality, _metric_quality(left, left_name), _metric_quality(right, left_name))
+            if value is not None
+            else "UNAVAILABLE"
+        )
         metrics[name] = _fact(
             f"{ref}.{name}",
             value,
@@ -424,8 +456,46 @@ def compare_distance_windows(
             f"right {right_ref} minus left {left_ref}",
             quality,
         )
+    same_distance_quality = _combine_quality(
+        left_quality,
+        right_quality,
+        _metric_quality(left, "distanceM"),
+        _metric_quality(right, "distanceM"),
+    )
     metrics["sameDistance"] = _fact(
-        f"{ref}.sameDistance", same_distance, None, source, "compare aggregated window distances", "EXACT" if left_distance is not None and right_distance is not None else "UNAVAILABLE"
+        f"{ref}.sameDistance",
+        same_distance,
+        None,
+        source,
+        "compare aggregated window distances",
+        same_distance_quality if left_distance is not None and right_distance is not None else "UNAVAILABLE",
+    )
+    left_complete = left.get("coverage", {}).get("complete", {}).get("value") if isinstance(left.get("coverage"), Mapping) else None
+    right_complete = right.get("coverage", {}).get("complete", {}).get("value") if isinstance(right.get("coverage"), Mapping) else None
+    left_coverage_quality = (
+        left.get("coverage", {}).get("complete", {}).get("quality", left_quality)
+        if isinstance(left.get("coverage"), Mapping)
+        and isinstance(left.get("coverage", {}).get("complete"), Mapping)
+        else left_quality
+    )
+    right_coverage_quality = (
+        right.get("coverage", {}).get("complete", {}).get("quality", right_quality)
+        if isinstance(right.get("coverage"), Mapping)
+        and isinstance(right.get("coverage", {}).get("complete"), Mapping)
+        else right_quality
+    )
+    hr_both = _metric_value(left, "averageHrBpm") is not None and _metric_value(right, "averageHrBpm") is not None
+    power_both = _metric_value(left, "averagePowerW") is not None and _metric_value(right, "averagePowerW") is not None
+    hr_quality = _combine_quality(left_quality, right_quality, _metric_quality(left, "averageHrBpm"), _metric_quality(right, "averageHrBpm"))
+    power_quality = _combine_quality(left_quality, right_quality, _metric_quality(left, "averagePowerW"), _metric_quality(right, "averagePowerW"))
+    coverage_quality = _combine_quality(left_quality, right_quality, left_coverage_quality, right_coverage_quality)
+    metric_quality = _combine_quality(
+        left_quality,
+        right_quality,
+        _metric_quality(left, "averageHrBpm"),
+        _metric_quality(right, "averageHrBpm"),
+        _metric_quality(left, "averagePowerW"),
+        _metric_quality(right, "averagePowerW"),
     )
     return {
         "ref": ref,
@@ -433,9 +503,34 @@ def compare_distance_windows(
         "rightRef": right_ref,
         "metrics": metrics,
         "comparability": {
-            "hasHrBoth": _fact(f"{ref}.hasHrBoth", _metric_value(left, "averageHrBpm") is not None and _metric_value(right, "averageHrBpm") is not None, None, source, "both windows expose average HR", "EXACT"),
-            "hasPowerBoth": _fact(f"{ref}.hasPowerBoth", _metric_value(left, "averagePowerW") is not None and _metric_value(right, "averagePowerW") is not None, None, source, "both windows expose average power", "EXACT"),
-            "qualityCompatible": _fact(f"{ref}.qualityCompatible", left.get("quality") != "UNAVAILABLE" and right.get("quality") != "UNAVAILABLE", None, source, "both windows have usable distance coverage", "EXACT"),
+            "leftQuality": _fact(f"{ref}.leftQuality", left_quality, None, source, "left window aggregate quality", left_quality),
+            "rightQuality": _fact(f"{ref}.rightQuality", right_quality, None, source, "right window aggregate quality", right_quality),
+            "hasHrBoth": _fact(f"{ref}.hasHrBoth", hr_both, None, source, "both windows expose average HR", hr_quality),
+            "hasPowerBoth": _fact(f"{ref}.hasPowerBoth", power_both, None, source, "both windows expose average power", power_quality),
+            "metricQualityCompatible": _fact(
+                f"{ref}.metricQualityCompatible",
+                hr_both and power_both and metric_quality != "UNAVAILABLE",
+                None,
+                source,
+                "both compared metrics are present with propagated quality",
+                metric_quality,
+            ),
+            "coverageComparable": _fact(
+                f"{ref}.coverageComparable",
+                left_complete is True and right_complete is True,
+                None,
+                source,
+                "both windows report complete requested-distance coverage",
+                coverage_quality,
+            ),
+            "qualityCompatible": _fact(
+                f"{ref}.qualityCompatible",
+                left_quality != "UNAVAILABLE" and right_quality != "UNAVAILABLE",
+                None,
+                source,
+                "both windows have usable distance coverage",
+                _combine_quality(left_quality, right_quality),
+            ),
         },
     }
 
@@ -459,6 +554,66 @@ def _planned_repetition_count(planned_steps: Sequence[Mapping[str, Any]] | None,
     return count or None
 
 
+def _distance_clusters(records: Sequence[_Lap]) -> list[list[_Lap]]:
+    clusters: list[list[_Lap]] = []
+    for lap in records:
+        if lap.recovery or lap.duration_sec is None or lap.average_pace_sec_per_km is None:
+            continue
+        matching = next(
+            (
+                cluster
+                for cluster in clusters
+                if abs(lap.distance_m - sum(item.distance_m for item in cluster) / len(cluster))
+                <= max(10.0, lap.distance_m * 0.05)
+            ),
+            None,
+        )
+        if matching is None:
+            clusters.append([lap])
+        else:
+            matching.append(lap)
+    return clusters
+
+
+def _structural_repetition_cluster(records: Sequence[_Lap]) -> tuple[list[_Lap] | None, str | None]:
+    """Return one evidence-backed structural cluster, or fail closed.
+
+    A repeated distance is not enough: auto-lap repetition must be separated by
+    shorter/recovery transitions and each candidate must have duration and pace.
+    Multiple qualifying clusters remain ambiguous without an explicit target.
+    """
+
+    repeated = [cluster for cluster in _distance_clusters(records) if len(cluster) >= 2]
+    if not repeated:
+        return None, "noRepeatedDistanceCluster"
+    eligible: list[list[_Lap]] = []
+    for cluster in repeated:
+        target = sum(item.distance_m for item in cluster) / len(cluster)
+        has_transition = False
+        transition_paces: list[float] = []
+        for left, right in zip(cluster, cluster[1:]):
+            between = [item for item in records if left.order < item.order < right.order]
+            transition_items = [item for item in between if item.recovery or item.distance_m < target * 0.75]
+            if transition_items:
+                has_transition = True
+                transition_paces.extend(
+                    item.average_pace_sec_per_km
+                    for item in transition_items
+                    if item.average_pace_sec_per_km is not None
+                )
+        if not has_transition:
+            continue
+        candidate_pace = sum(item.average_pace_sec_per_km for item in cluster) / len(cluster)
+        if transition_paces and candidate_pace >= min(transition_paces) * 0.9:
+            continue
+        eligible.append(cluster)
+    if len(eligible) == 1:
+        return eligible[0], "structuralCandidate"
+    if len(eligible) > 1:
+        return None, "ambiguousRepetitionClusters"
+    return None, "mainLapClusterExcluded"
+
+
 def detect_repetition_candidates(
     laps: Iterable[Mapping[str, Any]],
     *,
@@ -478,19 +633,26 @@ def detect_repetition_candidates(
         raise EvidenceCompilerError("repetition tolerance must be finite and non-negative")
     _assert_safe(laps)
     records, input_flags = _normalize_laps(laps)
+    structural_status: str | None = None
     if target_distance_m is None:
-        distances = [lap.distance_m for lap in records if not lap.recovery]
-        clusters: list[list[float]] = []
-        for distance in distances:
-            matching = next((cluster for cluster in clusters if abs(distance - sum(cluster) / len(cluster)) <= max(10.0, distance * 0.05)), None)
-            if matching is None:
-                clusters.append([distance])
-            else:
-                matching.append(distance)
-        repeated = [cluster for cluster in clusters if len(cluster) >= 2]
-        if len(repeated) == 1 and len(repeated[0]) < len(distances):
-            target_distance_m = sum(repeated[0]) / len(repeated[0])
-            tolerance_m = max(10.0, target_distance_m * 0.05)
+        explicit_candidates = [
+            lap
+            for lap in records
+            if any(token in lap.phase for token in ("rep", "interval", "fast", "stride", "speed")) and not lap.recovery
+        ]
+        if not explicit_candidates:
+            structural_cluster, structural_status = _structural_repetition_cluster(records)
+            if structural_cluster:
+                target_distance_m = sum(lap.distance_m for lap in structural_cluster) / len(structural_cluster)
+    flags = set(input_flags)
+    if structural_status == "ambiguousRepetitionClusters":
+        flags.add("ambiguousRepetitionClusters")
+    elif structural_status in {"noRepeatedDistanceCluster", "mainLapClusterExcluded"}:
+        flags.add("noStructuralRepetitionPattern")
+    elif structural_status == "structuralCandidate":
+        flags.add("structuralCandidatePolicyApplied")
+    if target_distance_m is not None and tolerance_m is None:
+        tolerance_m = max(10.0, target_distance_m * 0.05)
     candidates: list[tuple[_Lap, str]] = []
     for lap in records:
         explicit_candidate = any(token in lap.phase for token in ("rep", "interval", "fast", "stride", "speed")) and not lap.recovery
@@ -540,7 +702,6 @@ def detect_repetition_candidates(
             )
     plan_count = _planned_repetition_count(planned_steps, target_distance_m, tolerance_m or 0.0) if target_distance_m is not None else None
     plan_matched = None if plan_count is None else plan_count == len(candidate_items)
-    flags = set(input_flags)
     if any(item["quality"] == "UNAVAILABLE" for item in candidate_items):
         flags.add("missingDuration")
     return {

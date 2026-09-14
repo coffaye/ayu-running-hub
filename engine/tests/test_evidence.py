@@ -230,6 +230,87 @@ class EvidenceCompilerTests(unittest.TestCase):
         self.assertIsNone(result["metrics"]["powerDeltaW"]["value"])
         self.assertEqual(result["metrics"]["powerDeltaW"]["quality"], "UNAVAILABLE")
 
+    def test_comparison_propagates_interpolated_and_partial_quality(self) -> None:
+        exact = aggregate_distance_window([lap(0, 1000, 300)], 0, 1000, ref="segments.exact")
+        interpolated = aggregate_distance_window(
+            [lap(0, 1000, 300), lap(1, 1000, 300)],
+            500,
+            1500,
+            ref="segments.interpolated",
+        )
+        result = compare_distance_windows(exact, interpolated)
+        self.assertEqual(result["metrics"]["durationDeltaSec"]["quality"], "INTERPOLATED_FROM_LAP_AVERAGE")
+        self.assertEqual(result["metrics"]["sameDistance"]["quality"], "INTERPOLATED_FROM_LAP_AVERAGE")
+        self.assertEqual(result["comparability"]["leftQuality"]["value"], "EXACT")
+        self.assertEqual(result["comparability"]["rightQuality"]["value"], "INTERPOLATED_FROM_LAP_AVERAGE")
+        self.assertEqual(result["comparability"]["hasHrBoth"]["quality"], "INTERPOLATED_FROM_LAP_AVERAGE")
+        self.assertEqual(result["comparability"]["hasPowerBoth"]["quality"], "INTERPOLATED_FROM_LAP_AVERAGE")
+        self.assertTrue(result["comparability"]["coverageComparable"]["value"])
+        self.assertEqual(result["comparability"]["coverageComparable"]["quality"], "INTERPOLATED_FROM_LAP_AVERAGE")
+
+        partial_hr = aggregate_distance_window(
+            [lap(0, 1000, 300, hr=None), lap(1, 1000, 300, hr=160)],
+            0,
+            2000,
+            ref="segments.partial_hr",
+        )
+        partial_result = compare_distance_windows(partial_hr, exact)
+        self.assertEqual(partial_result["metrics"]["heartRateDeltaBpm"]["quality"], "PARTIAL_MISSING")
+        self.assertEqual(partial_result["comparability"]["hasHrBoth"]["quality"], "PARTIAL_MISSING")
+
+    def test_comparison_never_upgrades_unavailable_quality(self) -> None:
+        incomplete = aggregate_distance_window([lap(0, 900, 270)], 0, 1000, ref="segments.incomplete")
+        exact = aggregate_distance_window([lap(0, 1000, 300)], 0, 1000, ref="segments.exact")
+        result = compare_distance_windows(incomplete, exact)
+        self.assertEqual(result["metrics"]["durationDeltaSec"]["quality"], "UNAVAILABLE")
+        self.assertEqual(result["metrics"]["sameDistance"]["quality"], "UNAVAILABLE")
+        self.assertEqual(result["comparability"]["coverageComparable"]["quality"], "UNAVAILABLE")
+        self.assertFalse(result["comparability"]["coverageComparable"]["value"])
+
+    def test_steady_auto_laps_are_not_structural_repetitions(self) -> None:
+        result = detect_repetition_candidates(
+            [lap(index, 1000, 300) for index in range(10)] + [lap(10, 300, 100)]
+        )
+        self.assertEqual(result["count"]["value"], 0)
+        self.assertIn("noStructuralRepetitionPattern", result["qualityFlags"])
+
+    def test_structural_short_transition_pattern_is_detected_without_target(self) -> None:
+        result = detect_repetition_candidates(
+            [
+                lap(0, 400, 60),
+                lap(1, 100, 90, phase="recovery"),
+                lap(2, 402, 61),
+                lap(3, 120, 100, phase="recovery"),
+                lap(4, 398, 59),
+            ]
+        )
+        self.assertEqual(result["count"]["value"], 3)
+        self.assertAlmostEqual(result["targetDistanceM"]["value"], 400.0)
+        self.assertIn("structuralCandidatePolicyApplied", result["qualityFlags"])
+
+    def test_competing_structural_clusters_fail_closed(self) -> None:
+        result = detect_repetition_candidates(
+            [
+                lap(0, 400, 60),
+                lap(1, 100, 90, phase="recovery"),
+                lap(2, 400, 61),
+                lap(3, 100, 90, phase="recovery"),
+                lap(4, 300, 50),
+                lap(5, 100, 90, phase="recovery"),
+                lap(6, 300, 49),
+            ]
+        )
+        self.assertEqual(result["count"]["value"], 0)
+        self.assertIn("ambiguousRepetitionClusters", result["qualityFlags"])
+
+    def test_explicit_target_remains_deterministic_for_steady_auto_laps(self) -> None:
+        result = detect_repetition_candidates(
+            [lap(index, 1000, 300) for index in range(3)],
+            target_distance_m=1000,
+        )
+        self.assertEqual(result["count"]["value"], 3)
+        self.assertNotIn("noStructuralRepetitionPattern", result["qualityFlags"])
+
     def test_recovery_scope_is_required_and_explicit(self) -> None:
         pack = compile_run_evidence_pack([lap(0, 1000, 300)], recovery={"scope": "CURRENT_CONTEXT", "facts": {"percent": 82}})
         self.assertEqual(pack.recovery["scope"], "CURRENT_CONTEXT")
