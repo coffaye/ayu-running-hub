@@ -10,6 +10,24 @@ from .analysis import FixtureAnalyzer, ReportAnalyzer
 from .bundle import context_from_coros_bundle, coros_daily_bundle_json_schema, load_coros_bundle, validate_coros_bundle
 from .context import DailyRunContext, SourceEvidence
 from .completion import CompletionEvaluation, completion_evaluation_eligibility, has_completion_purpose_evidence
+from .evidence_registry import (
+    EvidenceRegistry,
+    EvidenceRegistryError,
+    ProjectedEvidence,
+    UnavailableEvidenceRef,
+    UnknownEvidenceRef,
+    build_evidence_registry,
+)
+from .insight import (
+    InsightValidationError,
+    StructuredInsight,
+    serialize_insight_bundle,
+    validate_insight_collection,
+    validate_narrative_text,
+    validate_shadow_runner_evidence_refs,
+    validate_structured_insight,
+)
+from .model_projection_v2 import build_evidence_projection, build_model_input_v2, context_for_model_v2
 from .coros_collector_client import (
     CollectorConfig,
     CollectorError,
@@ -51,6 +69,22 @@ __all__ = [
     "CompletionEvaluation",
     "completion_evaluation_eligibility",
     "has_completion_purpose_evidence",
+    "EvidenceRegistry",
+    "EvidenceRegistryError",
+    "ProjectedEvidence",
+    "UnavailableEvidenceRef",
+    "UnknownEvidenceRef",
+    "build_evidence_registry",
+    "InsightValidationError",
+    "StructuredInsight",
+    "serialize_insight_bundle",
+    "validate_insight_collection",
+    "validate_narrative_text",
+    "validate_shadow_runner_evidence_refs",
+    "validate_structured_insight",
+    "build_evidence_projection",
+    "build_model_input_v2",
+    "context_for_model_v2",
     "DeepSeekAnalyzer",
     "DeepSeekConfig",
     "DeepSeekError",
