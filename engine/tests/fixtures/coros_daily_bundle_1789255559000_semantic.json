@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "semantic-overlay-v1",
+  "baseFixture": "coros_daily_bundle_1789255559000.json",
+  "capturedFor": "report-intelligence-v2-semantic-golden",
+  "trainingContext": {
+    "todaySchedule": {
+      "title": "半马+3x200",
+      "sportType": "running",
+      "estimatedDistanceKm": 21.70,
+      "estimatedDurationSec": 5778,
+      "plannedLoad": 297,
+      "steps": []
+    },
+    "planAssociation": "MATCHED",
+    "planAssociationEvidence": [
+      "title: 半马+3x200",
+      "sport: running",
+      "distance: 21.70 km",
+      "duration: 1:36:18",
+      "load: 297 TL"
+    ]
+  }
+}
