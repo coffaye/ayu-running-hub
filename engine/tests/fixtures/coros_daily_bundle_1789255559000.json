@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "1789255559000",
+  "reportDate": "2026-09-13",
+  "retrievedAt": "2026-09-14T00:00:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "activity": {
+    "sportType": 100,
+    "title": "Outdoor Run",
+    "distanceKm": 22.09,
+    "durationSec": 5799.61,
+    "averagePaceSecPerKm": 262.57,
+    "averageHeartRateBpm": 155,
+    "cadenceSpm": 193,
+    "powerW": 239
+  },
+  "laps": [
+    {"index": 1, "distanceKm": 1, "durationSec": 255.90, "paceSecPerKm": 255.91, "heartRateBpm": 130, "maxHeartRateBpm": 144, "powerW": 243, "cadenceSpm": 193, "strideM": 1.21, "groundContactMs": 174, "elevationM": 0, "adjustedPaceSecPerKm": 257},
+    {"index": 2, "distanceKm": 1, "durationSec": 253.75, "paceSecPerKm": 253.76, "heartRateBpm": 145, "maxHeartRateBpm": 150, "powerW": 247, "cadenceSpm": 194, "strideM": 1.21, "groundContactMs": 173, "elevationM": 0, "adjustedPaceSecPerKm": 254},
+    {"index": 3, "distanceKm": 1, "durationSec": 256.50, "paceSecPerKm": 256.51, "heartRateBpm": 146, "maxHeartRateBpm": 149, "powerW": 246, "cadenceSpm": 194, "strideM": 1.20, "groundContactMs": 174, "elevationM": 0, "adjustedPaceSecPerKm": 255},
+    {"index": 4, "distanceKm": 1, "durationSec": 256.75, "paceSecPerKm": 256.76, "heartRateBpm": 146, "maxHeartRateBpm": 149, "powerW": 245, "cadenceSpm": 194, "strideM": 1.20, "groundContactMs": 174, "elevationM": 0, "adjustedPaceSecPerKm": 254},
+    {"index": 5, "distanceKm": 1, "durationSec": 254.30, "paceSecPerKm": 254.30, "heartRateBpm": 151, "maxHeartRateBpm": 153, "powerW": 244, "cadenceSpm": 196, "strideM": 1.20, "groundContactMs": 173, "elevationM": 0, "adjustedPaceSecPerKm": 255},
+    {"index": 6, "distanceKm": 1, "durationSec": 254.70, "paceSecPerKm": 254.71, "heartRateBpm": 150, "maxHeartRateBpm": 152, "powerW": 247, "cadenceSpm": 196, "strideM": 1.20, "groundContactMs": 172, "elevationM": 0, "adjustedPaceSecPerKm": 254},
+    {"index": 7, "distanceKm": 1, "durationSec": 254.25, "paceSecPerKm": 254.25, "heartRateBpm": 153, "maxHeartRateBpm": 157, "powerW": 249, "cadenceSpm": 197, "strideM": 1.19, "groundContactMs": 172, "elevationM": 0, "adjustedPaceSecPerKm": 252},
+    {"index": 8, "distanceKm": 1, "durationSec": 255.00, "paceSecPerKm": 255.00, "heartRateBpm": 154, "maxHeartRateBpm": 157, "powerW": 248, "cadenceSpm": 197, "strideM": 1.19, "groundContactMs": 171, "elevationM": 0, "adjustedPaceSecPerKm": 254},
+    {"index": 9, "distanceKm": 1, "durationSec": 253.75, "paceSecPerKm": 253.76, "heartRateBpm": 156, "maxHeartRateBpm": 160, "powerW": 247, "cadenceSpm": 197, "strideM": 1.20, "groundContactMs": 171, "elevationM": 1, "adjustedPaceSecPerKm": 254},
+    {"index": 10, "distanceKm": 1, "durationSec": 255.03, "paceSecPerKm": 255.03, "heartRateBpm": 156, "maxHeartRateBpm": 159, "powerW": 245, "cadenceSpm": 198, "strideM": 1.18, "groundContactMs": 171, "elevationM": 3, "adjustedPaceSecPerKm": 254},
+    {"index": 11, "distanceKm": 1, "durationSec": 257.22, "paceSecPerKm": 257.22, "heartRateBpm": 157, "maxHeartRateBpm": 161, "powerW": 245, "cadenceSpm": 198, "strideM": 1.17, "groundContactMs": 172, "elevationM": 0, "adjustedPaceSecPerKm": 256},
+    {"index": 12, "distanceKm": 1, "durationSec": 254.75, "paceSecPerKm": 254.76, "heartRateBpm": 159, "maxHeartRateBpm": 163, "powerW": 246, "cadenceSpm": 197, "strideM": 1.19, "groundContactMs": 173, "elevationM": 4, "adjustedPaceSecPerKm": 253},
+    {"index": 13, "distanceKm": 1, "durationSec": 254.50, "paceSecPerKm": 254.51, "heartRateBpm": 159, "maxHeartRateBpm": 162, "powerW": 245, "cadenceSpm": 198, "strideM": 1.19, "groundContactMs": 172, "elevationM": 2, "adjustedPaceSecPerKm": 256},
+    {"index": 14, "distanceKm": 1, "durationSec": 254.75, "paceSecPerKm": 254.76, "heartRateBpm": 161, "maxHeartRateBpm": 163, "powerW": 244, "cadenceSpm": 199, "strideM": 1.18, "groundContactMs": 171, "elevationM": 0, "adjustedPaceSecPerKm": 256},
+    {"index": 15, "distanceKm": 1, "durationSec": 256.25, "paceSecPerKm": 256.25, "heartRateBpm": 162, "maxHeartRateBpm": 164, "powerW": 248, "cadenceSpm": 198, "strideM": 1.18, "groundContactMs": 172, "elevationM": 2, "adjustedPaceSecPerKm": 252},
+    {"index": 16, "distanceKm": 1, "durationSec": 254.53, "paceSecPerKm": 254.54, "heartRateBpm": 161, "maxHeartRateBpm": 164, "powerW": 248, "cadenceSpm": 200, "strideM": 1.17, "groundContactMs": 170, "elevationM": 2, "adjustedPaceSecPerKm": 252},
+    {"index": 17, "distanceKm": 1, "durationSec": 253.47, "paceSecPerKm": 253.47, "heartRateBpm": 162, "maxHeartRateBpm": 164, "powerW": 247, "cadenceSpm": 199, "strideM": 1.18, "groundContactMs": 170, "elevationM": 2, "adjustedPaceSecPerKm": 254},
+    {"index": 18, "distanceKm": 1, "durationSec": 254.02, "paceSecPerKm": 254.02, "heartRateBpm": 164, "maxHeartRateBpm": 168, "powerW": 248, "cadenceSpm": 198, "strideM": 1.19, "groundContactMs": 170, "elevationM": 3, "adjustedPaceSecPerKm": 251},
+    {"index": 19, "distanceKm": 1, "durationSec": 254.23, "paceSecPerKm": 254.23, "heartRateBpm": 162, "maxHeartRateBpm": 164, "powerW": 246, "cadenceSpm": 200, "strideM": 1.18, "groundContactMs": 170, "elevationM": 0, "adjustedPaceSecPerKm": 254},
+    {"index": 20, "distanceKm": 1, "durationSec": 252.00, "paceSecPerKm": 252.00, "heartRateBpm": 164, "maxHeartRateBpm": 170, "powerW": 249, "cadenceSpm": 201, "strideM": 1.18, "groundContactMs": 170, "elevationM": 3, "adjustedPaceSecPerKm": 251},
+    {"index": 21, "distanceKm": 1, "durationSec": 244.40, "paceSecPerKm": 244.40, "heartRateBpm": 167, "maxHeartRateBpm": 173, "powerW": 255, "cadenceSpm": 201, "strideM": 1.22, "groundContactMs": 169, "elevationM": 0, "adjustedPaceSecPerKm": 246},
+    {"index": 22, "distanceKm": 0.1, "durationSec": 20.36, "paceSecPerKm": 203.61, "heartRateBpm": 174, "maxHeartRateBpm": 174, "powerW": 281, "cadenceSpm": 204, "strideM": 1.44, "groundContactMs": 157, "elevationM": 0, "adjustedPaceSecPerKm": 220},
+    {"index": 23, "distanceKm": 0.1532, "durationSec": 180.78, "paceSecPerKm": 1180.03, "heartRateBpm": 142, "maxHeartRateBpm": 175, "powerW": 68, "cadenceSpm": 93, "strideM": 0.54, "groundContactMs": 315, "elevationM": 0, "adjustedPaceSecPerKm": 699},
+    {"index": 24, "distanceKm": 0.2, "durationSec": 36.73, "paceSecPerKm": 183.66, "heartRateBpm": 148, "maxHeartRateBpm": 164, "powerW": 306, "cadenceSpm": 211, "strideM": 1.54, "groundContactMs": 144, "elevationM": 0, "adjustedPaceSecPerKm": 186},
+    {"index": 25, "distanceKm": 0.096, "durationSec": 59.79, "paceSecPerKm": 622.82, "heartRateBpm": 157, "maxHeartRateBpm": 167, "powerW": 128, "cadenceSpm": 133, "strideM": 0.72, "groundContactMs": 188, "elevationM": 0, "adjustedPaceSecPerKm": 562},
+    {"index": 26, "distanceKm": 0.2, "durationSec": 36.68, "paceSecPerKm": 183.40, "heartRateBpm": 152, "maxHeartRateBpm": 166, "powerW": 293, "cadenceSpm": 212, "strideM": 1.54, "groundContactMs": 139, "elevationM": 0, "adjustedPaceSecPerKm": 191},
+    {"index": 27, "distanceKm": 0.08396, "durationSec": 60.30, "paceSecPerKm": 718.20, "heartRateBpm": 159, "maxHeartRateBpm": 170, "powerW": 126, "cadenceSpm": 142, "strideM": 0.58, "groundContactMs": 188, "elevationM": 0, "adjustedPaceSecPerKm": 605},
+    {"index": 28, "distanceKm": 0.2, "durationSec": 34.65, "paceSecPerKm": 173.25, "heartRateBpm": 155, "maxHeartRateBpm": 171, "powerW": 288, "cadenceSpm": 206, "strideM": 1.68, "groundContactMs": 163, "elevationM": 0, "adjustedPaceSecPerKm": 184},
+    {"index": 29, "distanceKm": 0.05263, "durationSec": 30.16, "paceSecPerKm": 573.06, "heartRateBpm": 173, "maxHeartRateBpm": 175, "powerW": 201, "cadenceSpm": 167, "strideM": 0.62, "groundContactMs": 174, "elevationM": 0, "adjustedPaceSecPerKm": 427}
+  ],
+  "trainingContext": {
+    "todaySchedule": null,
+    "planAssociation": "UNMATCHED",
+    "planAssociationEvidence": []
+  },
+  "recentLoad": null,
+  "recovery": null,
+  "fitness": null,
+  "tomorrowSchedule": null,
+  "dataQuality": {
+    "activity": "available",
+    "laps": "sanitized-main-lap-sequence",
+    "todaySchedule": "unavailable",
+    "tomorrowSchedule": "unavailable",
+    "load": "not-captured",
+    "recovery": "not-captured",
+    "fitness": "not-captured"
+  },
+  "provenance": {
+    "source": "coros-mcp",
+    "tools": {
+      "activity": "querySportRecords",
+      "laps": "queryActivityLapData"
+    }
+  }
+}
