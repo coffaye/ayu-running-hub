@@ -39,6 +39,7 @@ NATIVE_REFERENCE_FILES = (
 HTML_DOCTYPE_RE = re.compile(r"^<!doctype\s+html>", re.IGNORECASE)
 HTML_ROOT_RE = re.compile(r"^<html(?:\s|>)", re.IGNORECASE)
 HTML_CLOSE_RE = re.compile(r"</html>\s*$", re.IGNORECASE)
+_MAX_NATIVE_FORMAT_RETRIES = 1
 _HTML_DOCTYPE_TAG_RE = re.compile(r"<!doctype\s+html\s*>", re.IGNORECASE)
 _HTML_ROOT_TAG_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 _HTML_CLOSE_TAG_RE = re.compile(r"</html\s*>", re.IGNORECASE)
@@ -656,7 +657,14 @@ def _native_generate_html(config: DeepSeekConfig, request: Mapping[str, Any]) ->
         )
     extraction = _extract_output_text_parts(response.body)
     text = extraction.text
-    if not isinstance(text, str) or not text.strip() or "<html" not in text.casefold() or "</html>" not in text.casefold():
+    if not isinstance(text, str) or not text.strip():
+        raise DeepSeekError(
+            "Native Agent response was empty",
+            category="empty_output",
+            status_code=response.status_code,
+            safe_metadata=_response_safe_metadata(response, extraction),
+        )
+    if "<html" not in text.casefold() or "</html>" not in text.casefold():
         raise DeepSeekError(
             "Native Agent response was not an HTML document",
             category="malformed_response",
@@ -688,23 +696,56 @@ def _call_model(
     clock: Callable[[], float],
 ) -> tuple[str, dict[str, Any]]:
     started = clock()
-    requested_at = datetime.now(timezone.utc).isoformat()
-    try:
-        output, metadata = (generator or _native_generate_html)(config, request)
-    except DeepSeekError as exc:
-        provider_category = _provider_failure_category(exc)
-        raise NativeAgentError(
-            stage,
-            provider_category or exc.category,
-            {"provider": "deepseek", "requestedAt": requested_at, **exc.to_safe_dict()},
-        ) from None
-    except Exception as exc:
-        raise NativeAgentError(stage, "unexpected", {"requestedAt": requested_at, "errorType": type(exc).__name__}) from None
-    duration_ms = max(0, round((clock() - started) * 1000))
-    if not isinstance(output, str) or not output.strip():
-        raise NativeAgentError(stage, "empty_output", {"durationMs": duration_ms, "requestedAt": requested_at})
-    safe_metadata = _safe_model_metadata(metadata if isinstance(metadata, Mapping) else {}, duration_ms, requested_at)
-    return output, safe_metadata
+    attempt_count = 0
+    format_retry_count = 0
+    while True:
+        attempt_count += 1
+        requested_at = datetime.now(timezone.utc).isoformat()
+        try:
+            output, metadata = (generator or _native_generate_html)(config, request)
+        except DeepSeekError as exc:
+            if exc.category == "malformed_response" and format_retry_count < _MAX_NATIVE_FORMAT_RETRIES:
+                format_retry_count += 1
+                continue
+            provider_category = _provider_failure_category(exc)
+            raise NativeAgentError(
+                stage,
+                provider_category or exc.category,
+                {
+                    "provider": "deepseek",
+                    "requestedAt": requested_at,
+                    "attemptCount": attempt_count,
+                    "formatRetryCount": format_retry_count,
+                    **exc.to_safe_dict(),
+                },
+            ) from None
+        except Exception as exc:
+            raise NativeAgentError(
+                stage,
+                "unexpected",
+                {
+                    "requestedAt": requested_at,
+                    "attemptCount": attempt_count,
+                    "formatRetryCount": format_retry_count,
+                    "errorType": type(exc).__name__,
+                },
+            ) from None
+        duration_ms = max(0, round((clock() - started) * 1000))
+        if not isinstance(output, str) or not output.strip():
+            raise NativeAgentError(
+                stage,
+                "empty_output",
+                {
+                    "durationMs": duration_ms,
+                    "requestedAt": requested_at,
+                    "attemptCount": attempt_count,
+                    "formatRetryCount": format_retry_count,
+                },
+            )
+        safe_metadata = _safe_model_metadata(metadata if isinstance(metadata, Mapping) else {}, duration_ms, requested_at)
+        safe_metadata["attemptCount"] = attempt_count
+        safe_metadata["formatRetryCount"] = format_retry_count
+        return output, safe_metadata
 
 
 def run_native_agent(

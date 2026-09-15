@@ -120,6 +120,26 @@ def _html(label: str) -> str:
     )
 
 
+def _malformed_error() -> DeepSeekError:
+    return DeepSeekError(
+        "malformed response must not be published",
+        category="malformed_response",
+        status_code=200,
+        safe_metadata={"outputCharCount": 12},
+    )
+
+
+def _queued_generator(outcomes: list[Any], calls: list[tuple[DeepSeekConfig, dict[str, Any]]]):
+    def generator(config: DeepSeekConfig, request: dict[str, Any]):
+        calls.append((config, request))
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    return generator
+
+
 def test_native_agent_uses_two_fresh_calls_and_pass2_is_the_only_final():
     calls: list[dict[str, Any]] = []
 
@@ -159,6 +179,147 @@ def test_native_agent_uses_two_fresh_calls_and_pass2_is_the_only_final():
     assert "rawReasoning" not in result.pass1
     assert "rawReasoning" not in result.pass2
     assert result.final_validation["completeHtml"]
+    assert result.pass1["attemptCount"] == 1
+    assert result.pass1["formatRetryCount"] == 0
+    assert result.pass2["attemptCount"] == 1
+    assert result.pass2["formatRetryCount"] == 0
+
+
+def test_pass1_format_retry_reuses_identical_request_and_only_success_becomes_draft():
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    drafts: list[str] = []
+    generator = _queued_generator(
+        [_malformed_error(), (_html("draft-after-retry"), {}), (_html("final"), {})],
+        calls,
+    )
+
+    result = run_native_agent(
+        material(),
+        native_input(),
+        _config(),
+        generator=generator,
+        draft_sink=drafts.append,
+    )
+
+    assert len(calls) == 3
+    assert calls[0][1] is calls[1][1]
+    assert calls[0][1] == calls[1][1]
+    assert calls[0][0] is calls[1][0]
+    assert drafts == [_html("draft-after-retry")]
+    assert result.draft_html == _html("draft-after-retry")
+    assert result.pass1["attemptCount"] == 2
+    assert result.pass1["formatRetryCount"] == 1
+    assert result.pass2["attemptCount"] == 1
+    assert result.pass2["formatRetryCount"] == 0
+
+
+def test_pass1_format_retry_is_bounded_and_never_publishes_malformed_output():
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    drafts: list[str] = []
+    with pytest.raises(NativeAgentError) as exc_info:
+        run_native_agent(
+            material(),
+            native_input(),
+            _config(),
+            generator=_queued_generator([_malformed_error(), _malformed_error()], calls),
+            draft_sink=drafts.append,
+        )
+
+    assert len(calls) == 2
+    assert drafts == []
+    assert exc_info.value.stage == "pass1"
+    assert exc_info.value.category == "malformed_response"
+    assert exc_info.value.safe_metadata["attemptCount"] == 2
+    assert exc_info.value.safe_metadata["formatRetryCount"] == 1
+    assert "malformed response must not be published" not in json.dumps(exc_info.value.to_safe_dict())
+
+
+def test_pass2_format_retry_reuses_identical_request_and_pass1_draft_is_never_final():
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    generator = _queued_generator([(_html("draft"), {}), _malformed_error(), (_html("final-after-retry"), {})], calls)
+
+    result = run_native_agent(material(), native_input(), _config(), generator=generator)
+
+    assert len(calls) == 3
+    assert calls[1][1] is calls[2][1]
+    assert calls[1][1] == calls[2][1]
+    assert result.final_html == _html("final-after-retry")
+    assert result.pass1["attemptCount"] == 1
+    assert result.pass2["attemptCount"] == 2
+    assert result.pass2["formatRetryCount"] == 1
+
+
+def test_pass2_format_retry_is_bounded_and_never_falls_back_to_draft():
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    with pytest.raises(NativeAgentError) as exc_info:
+        run_native_agent(
+            material(),
+            native_input(),
+            _config(),
+            generator=_queued_generator([(_html("draft"), {}), _malformed_error(), _malformed_error()], calls),
+        )
+
+    assert len(calls) == 3
+    assert exc_info.value.stage == "pass2"
+    assert exc_info.value.category == "malformed_response"
+    assert exc_info.value.safe_metadata["attemptCount"] == 2
+    assert exc_info.value.safe_metadata["formatRetryCount"] == 1
+
+
+def test_each_stage_allows_at_most_one_format_retry_for_a_maximum_of_four_calls():
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    result = run_native_agent(
+        material(),
+        native_input(),
+        _config(),
+        generator=_queued_generator(
+            [_malformed_error(), (_html("draft"), {}), _malformed_error(), (_html("final"), {})],
+            calls,
+        ),
+    )
+
+    assert len(calls) == 4
+    assert result.pass1["attemptCount"] == 2
+    assert result.pass1["formatRetryCount"] == 1
+    assert result.pass2["attemptCount"] == 2
+    assert result.pass2["formatRetryCount"] == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    (
+        DeepSeekError("empty", category="empty_output"),
+        DeepSeekError("incomplete", category="incomplete"),
+        DeepSeekError("balance", category="http_error", status_code=402),
+        DeepSeekError("rate", category="http_error", status_code=429),
+        DeepSeekError("transient", category="http_error", status_code=503),
+    ),
+)
+def test_non_format_provider_failures_do_not_retry(error: DeepSeekError):
+    calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+    with pytest.raises(NativeAgentError) as exc_info:
+        run_native_agent(material(), native_input(), _config(), generator=_queued_generator([error], calls))
+
+    assert len(calls) == 1
+    assert exc_info.value.safe_metadata["attemptCount"] == 1
+    assert exc_info.value.safe_metadata["formatRetryCount"] == 0
+
+
+def test_unsafe_or_missing_png_final_html_does_not_trigger_format_retry():
+    for final_html, expected_category in (
+        (_html('<img src="https://cdn.example.test/chart.png">'), "unsafe_external_resource"),
+        ("<!DOCTYPE html><html><body>complete but no png</body></html>", "missing_png_export"),
+    ):
+        calls: list[tuple[DeepSeekConfig, dict[str, Any]]] = []
+        with pytest.raises(NativeAgentError) as exc_info:
+            run_native_agent(
+                material(),
+                native_input(),
+                _config(),
+                generator=_queued_generator([(_html("draft"), {}), (final_html, {})], calls),
+            )
+        assert len(calls) == 2
+        assert exc_info.value.category == expected_category
 
 
 @pytest.mark.parametrize(
@@ -173,16 +334,24 @@ def test_native_agent_maps_provider_failures_without_exposing_body(status_code: 
         run_native_agent(material(), native_input(), _config(), generator=failing_generator)
     assert exc_info.value.category == category
     assert "provider body omitted" not in json.dumps(exc_info.value.to_safe_dict())
+    assert exc_info.value.safe_metadata["attemptCount"] == 1
+    assert exc_info.value.safe_metadata["formatRetryCount"] == 0
 
 
 def test_native_agent_normalizes_prose_wrapped_pass2_and_keeps_pass2_as_final_source():
+    wrapped_calls: list[dict[str, Any]] = []
+
     def wrapped_generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        wrapped_calls.append(request)
         if "Draft HTML to review" in request["input"]:
             return "修正后的完整 HTML：\n" + _html("fenced") + "\n以上为最终版本。", {}
         return _html("draft"), {}
 
     result = run_native_agent(material(), native_input(), _config(), generator=wrapped_generator)
+    assert len(wrapped_calls) == 2
     assert result.final_html == _html("fenced")
+    assert result.pass1["attemptCount"] == 1
+    assert result.pass2["attemptCount"] == 1
     assert result.final_validation["rawEnvelopeStrict"] is False
     assert result.final_validation["envelopeNormalized"] is True
     assert result.final_validation["envelopePrefixChars"] > 0
@@ -190,13 +359,19 @@ def test_native_agent_normalizes_prose_wrapped_pass2_and_keeps_pass2_as_final_so
     assert "修正后的完整 HTML" not in result.final_html
     assert "以上为最终版本" not in result.final_html
 
+    fenced_calls: list[dict[str, Any]] = []
+
     def fenced_generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        fenced_calls.append(request)
         if "Draft HTML to review" in request["input"]:
             return "```html\n" + _html("fenced") + "\n```", {}
         return _html("draft"), {}
 
     fenced_result = run_native_agent(material(), native_input(), _config(), generator=fenced_generator)
+    assert len(fenced_calls) == 2
     assert fenced_result.final_html == _html("fenced")
+    assert fenced_result.pass1["attemptCount"] == 1
+    assert fenced_result.pass2["attemptCount"] == 1
     assert fenced_result.final_validation["envelopeNormalized"] is True
 
     with pytest.raises(NativeAgentError) as unsafe:
