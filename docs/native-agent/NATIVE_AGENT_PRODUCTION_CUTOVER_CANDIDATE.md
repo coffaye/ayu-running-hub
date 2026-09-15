@@ -59,7 +59,7 @@ The public manifest remains `schemaVersion: 1` with the existing `runId`, `local
 - `nativeSkillSource` and `nativeSkillSnapshotSha256`
 - `model`, `reasoningEffort`, `engineCommit`, `dataSource`, and `collectorContractVersion`
 
-The local E2E manifest entry used the exact report URL `reports/daily/2026-09-13/1789255559000.html` and engine commit `14d359db755057aa3445f774aa1cbea882f83826`.
+The local E2E manifest entry used the exact report URL `reports/daily/2026-09-13/1789255559000.html`. Its `engineCommit` was injected from the full SHA returned by `git rev-parse HEAD` at the time of the final freeze E2E; it was not hard-coded in the harness.
 
 ## H. Local production-entry harness
 
@@ -116,7 +116,8 @@ The legacy renderer remains available in the tree. The new install transaction r
 - No push of the prototype or cutover branch.
 - No workflow dispatch, Pages deployment, Worker change, running_page source change, public manifest write, or Production report regeneration.
 - `ayu-running-reports` was not modified.
-- Hub commit: `14d359db755057aa3445f774aa1cbea882f83826`.
+- Runtime code commit: `14d359db755057aa3445f774aa1cbea882f83826`.
+- Final audit branch HEAD: verified with `git rev-parse HEAD` after the final audit commit. This is intentionally recorded as a verification rule rather than a literal self-reference, because a commit containing its own SHA cannot remain unchanged after that SHA is written into the file.
 
 **NATIVE AGENT PRODUCTION CUTOVER CANDIDATE READY**
 
@@ -125,9 +126,10 @@ This gate authorizes no automatic migration or deployment; the next phase must e
 ## N. SHA reconciliation and final freeze
 
 `14d359db755057aa3445f774aa1cbea882f83826` is one commit after
-`9279c85675691f8b8431791d0576be9fdd7236e9`. The only delta is this audit
+`9279c85675691f8b8431791d0576be9fdd7236e9`. The only delta is the audit
 document; runtime, `generate_report.py`, workflow, vendored Skill snapshot,
-adapter, and manifest logic are unchanged. Therefore the original E2E remained
-code-applicable, and the freeze E2E was additionally rerun with
-`AYU_ENGINE_COMMIT` equal to the actual current HEAD. Its temporary manifest
-also records the full current HEAD SHA and passed the same Golden checks.
+adapter, and manifest logic are unchanged. The final audit commit is also
+document-only. Therefore the prior E2E remains code-applicable, and the final
+freeze E2E is rerun after the last audit commit with `AYU_ENGINE_COMMIT` set to
+the exact current HEAD. Its temporary manifest records that same full SHA and
+passes the same Golden checks.
