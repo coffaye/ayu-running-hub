@@ -1,0 +1,36 @@
+{
+  "runtimeVersion": "native-agent-runtime-v1",
+  "sourceRepository": "coffaye/ayu-running-reports",
+  "nativeSkillSource": "ayu-running-reports:frozen-snapshot:7c23f7c28643bc0d62d84afb2a8a782fb966879e8e8f30658a4944bd57ee2708",
+  "snapshotSha256": "7c23f7c28643bc0d62d84afb2a8a782fb966879e8e8f30658a4944bd57ee2708",
+  "files": {
+    "SKILL.md": {
+      "path": "engine/native_skill/SKILL.md",
+      "sha256": "12c1e0aa702282554e17c9ddfafde4683990119c344b3c5b1e6fc94e22e5f235"
+    },
+    "references/report-modes.md": {
+      "path": "engine/native_skill/references/report-modes.md",
+      "sha256": "fda4f6f66ccdc7e32005609658070b9e95fc23e8e403600dc6d1fb6536f8a7f1"
+    },
+    "references/upstream/review-methodology.md": {
+      "path": "engine/native_skill/references/upstream/review-methodology.md",
+      "sha256": "f9171123237c2f01596fff2399c69b4a76eaea87cc9716c563bea9119faea034"
+    },
+    "references/shadowrunner/frameworks.md": {
+      "path": "engine/native_skill/references/shadowrunner/frameworks.md",
+      "sha256": "194ae79a5534e915c11f77569815e9b8a0213e4ad52738cc252d88aec91523de"
+    },
+    "references/shadowrunner/voice-and-views.md": {
+      "path": "engine/native_skill/references/shadowrunner/voice-and-views.md",
+      "sha256": "d68000a3f19c8ec544d2b90fd82182af07e4484817e54a60af0021f6d8df1620"
+    },
+    "references/design-system.md": {
+      "path": "engine/native_skill/references/design-system.md",
+      "sha256": "e2f07754125ba083354e59810c796492f7084ca83d28ca3248dfc5fd514613eb"
+    },
+    "references/png-export.md": {
+      "path": "engine/native_skill/references/png-export.md",
+      "sha256": "ce7e28977d0ef54c3f30bb64319aa2125f34c1bbd9f179eed6a27296779c6841"
+    }
+  }
+}

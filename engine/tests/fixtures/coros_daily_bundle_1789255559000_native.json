@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "native-input-overlay-v1",
+  "reportDate": "2026-09-13",
+  "capturedFor": "native-agent-production-cutover",
+  "trainingContext": {
+    "todaySchedule": {
+      "title": "半马+3x200",
+      "sportType": "running",
+      "estimatedDistanceKm": 21.7,
+      "estimatedDurationSec": 5778,
+      "plannedLoad": 297,
+      "steps": []
+    },
+    "planAssociation": "MATCHED",
+    "planAssociationEvidence": [
+      "title: 半马+3x200",
+      "sport: running",
+      "distance: 21.70 km",
+      "duration: 1:36:18",
+      "load: 297 TL"
+    ]
+  },
+  "recentLoad": {
+    "reportDate": "2026-09-13",
+    "shortTermLoad": 187,
+    "longTermLoad": 148,
+    "ratio": 1.26,
+    "status": "Optimized"
+  },
+  "dataQuality": {
+    "todaySchedule": "available",
+    "load": "date-matched",
+    "recovery": "current-only-excluded"
+  }
+}
