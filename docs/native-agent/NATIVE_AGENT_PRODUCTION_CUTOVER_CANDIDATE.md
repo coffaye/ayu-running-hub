@@ -59,7 +59,7 @@ The public manifest remains `schemaVersion: 1` with the existing `runId`, `local
 - `nativeSkillSource` and `nativeSkillSnapshotSha256`
 - `model`, `reasoningEffort`, `engineCommit`, `dataSource`, and `collectorContractVersion`
 
-The local E2E manifest entry used the exact report URL `reports/daily/2026-09-13/1789255559000.html` and engine commit `9279c85675691f8b8431791d0576be9fdd7236e9`.
+The local E2E manifest entry used the exact report URL `reports/daily/2026-09-13/1789255559000.html` and engine commit `14d359db755057aa3445f774aa1cbea882f83826`.
 
 ## H. Local production-entry harness
 
@@ -75,10 +75,10 @@ The two live calls completed successfully:
 
 | Stage | Provider model | Output chars | Input tokens | Output tokens | Reasoning tokens | Duration |
 |---|---|---:|---:|---:|---:|---:|
-| Pass 1 | `deepseek-flash` | 24,976 | 13,986 | 33,048 | 23,063 | 123,217 ms |
-| Pass 2 | `deepseek-flash` | 24,879 | 24,178 | 25,027 | 15,059 | 94,350 ms |
+| Pass 1 | `deepseek-flash` | 20,298 | 13,986 | 27,744 | 19,482 | 110,921 ms |
+| Pass 2 | `deepseek-flash` | 20,576 | 22,455 | 32,289 | 23,784 | 124,670 ms |
 
-The final HTML was 24,879 characters. It began with `<!DOCTYPE html>`, ended with `</html>`, contained the required `下载 PNG` button and browser-side Canvas export, and used Pass 2 as the installed artifact.
+The freeze E2E calls were requested at `2026-09-15T02:59:36.537631+00:00` and `2026-09-15T03:01:27.459488+00:00`; the temporary manifest was generated at `2026-09-15T03:03:32Z`. The final HTML was 20,576 characters. It began with `<!DOCTYPE html>`, ended with `</html>`, contained the required `下载 PNG` button and browser-side Canvas export, and used Pass 2 as the installed artifact.
 
 ## J. Acceptance checks
 
@@ -116,8 +116,18 @@ The legacy renderer remains available in the tree. The new install transaction r
 - No push of the prototype or cutover branch.
 - No workflow dispatch, Pages deployment, Worker change, running_page source change, public manifest write, or Production report regeneration.
 - `ayu-running-reports` was not modified.
-- Hub commit: `9279c85675691f8b8431791d0576be9fdd7236e9`.
+- Hub commit: `14d359db755057aa3445f774aa1cbea882f83826`.
 
 **NATIVE AGENT PRODUCTION CUTOVER CANDIDATE READY**
 
 This gate authorizes no automatic migration or deployment; the next phase must explicitly review and approve a production cutover.
+
+## N. SHA reconciliation and final freeze
+
+`14d359db755057aa3445f774aa1cbea882f83826` is one commit after
+`9279c85675691f8b8431791d0576be9fdd7236e9`. The only delta is this audit
+document; runtime, `generate_report.py`, workflow, vendored Skill snapshot,
+adapter, and manifest logic are unchanged. Therefore the original E2E remained
+code-applicable, and the freeze E2E was additionally rerun with
+`AYU_ENGINE_COMMIT` equal to the actual current HEAD. Its temporary manifest
+also records the full current HEAD SHA and passed the same Golden checks.
