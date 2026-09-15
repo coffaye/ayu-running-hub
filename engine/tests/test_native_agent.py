@@ -17,6 +17,7 @@ from ayu_report_engine.native_agent import (
     html_validation,
     load_native_material,
     native_manifest_provenance,
+    normalize_html_envelope,
     run_native_agent,
     validate_native_final_html,
 )
@@ -173,19 +174,123 @@ def test_native_agent_maps_provider_failures_without_exposing_body(status_code: 
     assert "provider body omitted" not in json.dumps(exc_info.value.to_safe_dict())
 
 
-def test_native_agent_rejects_fenced_or_unsafe_pass2_without_repair():
+def test_native_agent_normalizes_prose_wrapped_pass2_and_keeps_pass2_as_final_source():
+    def wrapped_generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        if "Draft HTML to review" in request["input"]:
+            return "修正后的完整 HTML：\n" + _html("fenced") + "\n以上为最终版本。", {}
+        return _html("draft"), {}
+
+    result = run_native_agent(material(), native_input(), _config(), generator=wrapped_generator)
+    assert result.final_html == _html("fenced")
+    assert result.final_validation["rawEnvelopeStrict"] is False
+    assert result.final_validation["envelopeNormalized"] is True
+    assert result.final_validation["envelopePrefixChars"] > 0
+    assert result.final_validation["envelopeSuffixChars"] > 0
+    assert "修正后的完整 HTML" not in result.final_html
+    assert "以上为最终版本" not in result.final_html
+
     def fenced_generator(_config: DeepSeekConfig, request: dict[str, Any]):
         if "Draft HTML to review" in request["input"]:
             return "```html\n" + _html("fenced") + "\n```", {}
         return _html("draft"), {}
 
-    with pytest.raises(NativeAgentError, match="Native Agent generation failed") as exc_info:
-        run_native_agent(material(), native_input(), _config(), generator=fenced_generator)
-    assert exc_info.value.category == "incomplete_html"
+    fenced_result = run_native_agent(material(), native_input(), _config(), generator=fenced_generator)
+    assert fenced_result.final_html == _html("fenced")
+    assert fenced_result.final_validation["envelopeNormalized"] is True
 
     with pytest.raises(NativeAgentError) as unsafe:
         validate_native_final_html("<!DOCTYPE html><html><body>provider schema</body></html>")
     assert unsafe.value.category == "unsafe_visible_language"
+    assert unsafe.value.safe_metadata["pngExport"] is None
+
+
+def test_normalized_html_still_rejects_forbidden_visible_language():
+    normalized, metadata = normalize_html_envelope("preface\n" + _html("provider schema") + "\npostscript")
+    assert metadata["envelopeNormalized"] is True
+    with pytest.raises(NativeAgentError) as unsafe:
+        validate_native_final_html(normalized)
+    assert unsafe.value.category == "unsafe_visible_language"
+    assert unsafe.value.safe_metadata["safeVisibleLanguage"] is False
+
+
+def test_normalized_html_still_requires_png_export():
+    html_without_png = "<!DOCTYPE html><html><body>clean</body></html>"
+    normalized, _ = normalize_html_envelope("review result:\n" + html_without_png)
+    with pytest.raises(NativeAgentError) as missing_png:
+        validate_native_final_html(normalized)
+    assert missing_png.value.category == "missing_png_export"
+    assert missing_png.value.safe_metadata["safeVisibleLanguage"] is True
+    assert missing_png.value.safe_metadata["pngExport"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        ("<!DOCTYPE html><html><body>strict</body></html>", "<!DOCTYPE html><html><body>strict</body></html>"),
+        ("<html><body>strict</body></html>", "<html><body>strict</body></html>"),
+        ("```html\n<!DOCTYPE html><html><body>fenced</body></html>\n```", "<!DOCTYPE html><html><body>fenced</body></html>"),
+        ("preface\n<html><body>prefix</body></html>", "<html><body>prefix</body></html>"),
+        ("<html><body>suffix</body></html>\npostscript", "<html><body>suffix</body></html>"),
+        ("preface\n<!DOCTYPE html><html><body>both</body></html>\npostscript", "<!DOCTYPE html><html><body>both</body></html>"),
+    ),
+)
+def test_normalize_html_envelope_accepts_strict_and_single_wrapped_documents(raw: str, expected: str):
+    normalized, metadata = normalize_html_envelope(raw)
+    assert normalized == expected
+    assert metadata["htmlRootCount"] == 1
+    assert metadata["htmlCloseCount"] == 1
+
+
+def test_normalize_html_envelope_preserves_internal_html_bytes():
+    internal = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n  <body>  mixed\tspacing  </body>\n</html>"
+    normalized, metadata = normalize_html_envelope("prefix\n" + internal + "\nsuffix")
+    assert normalized == internal
+    assert normalized[normalized.index("<html"):normalized.index("</html>") + len("</html>")] == internal[internal.index("<html"):]
+    assert metadata["envelopePrefixChars"] == len("prefix\n")
+    assert metadata["envelopeSuffixChars"] == len("\nsuffix")
+
+
+@pytest.mark.parametrize(
+    ("raw", "category"),
+    (
+        ("<!DOCTYPE html><html><body>one</body></html><!DOCTYPE html><html><body>two</body></html>", "ambiguous_html_envelope"),
+        ("<html><body>one</body></html><html><body>two</body></html>", "ambiguous_html_envelope"),
+        ("<html><body>missing close</body>", "invalid_html_envelope"),
+        ("preface only", "invalid_html_envelope"),
+        ("</html><html><body>wrong order</body></html>", "ambiguous_html_envelope"),
+    ),
+)
+def test_normalize_html_envelope_fails_closed_for_ambiguous_or_invalid_input(raw: str, category: str):
+    with pytest.raises(NativeAgentError) as exc_info:
+        normalize_html_envelope(raw)
+    assert exc_info.value.category == category
+    assert "one" not in json.dumps(exc_info.value.to_safe_dict())
+
+
+def test_wrapper_text_is_not_published_or_recorded_in_safe_metadata():
+    wrapper_prefix = "provider schema wrapper must not survive"
+
+    def wrapped_generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        if "Draft HTML to review" in request["input"]:
+            return wrapper_prefix + "\n" + _html("safe") + "\nwrapper postscript", {}
+        return _html("draft"), {}
+
+    result = run_native_agent(material(), native_input(), _config(), generator=wrapped_generator)
+    assert wrapper_prefix not in result.final_html
+    assert wrapper_prefix not in json.dumps(result.final_validation, ensure_ascii=False)
+
+
+def test_envelope_failure_metadata_is_safe_and_defers_language_and_png_checks():
+    def malformed_generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        if "Draft HTML to review" in request["input"]:
+            return "preface without html", {}
+        return _html("draft"), {}
+
+    with pytest.raises(NativeAgentError) as exc_info:
+        run_native_agent(material(), native_input(), _config(), generator=malformed_generator)
+    safe = exc_info.value.to_safe_dict()
+    assert safe["safeVisibleLanguage"] is None
+    assert safe["pngExport"] is None
 
 
 def test_strict_html_validation_has_no_repair_behavior():

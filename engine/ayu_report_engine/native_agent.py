@@ -39,6 +39,9 @@ NATIVE_REFERENCE_FILES = (
 HTML_DOCTYPE_RE = re.compile(r"^<!doctype\s+html>", re.IGNORECASE)
 HTML_ROOT_RE = re.compile(r"^<html(?:\s|>)", re.IGNORECASE)
 HTML_CLOSE_RE = re.compile(r"</html>\s*$", re.IGNORECASE)
+_HTML_DOCTYPE_TAG_RE = re.compile(r"<!doctype\s+html\s*>", re.IGNORECASE)
+_HTML_ROOT_TAG_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
+_HTML_CLOSE_TAG_RE = re.compile(r"</html\s*>", re.IGNORECASE)
 _FORBIDDEN_VISIBLE_TERMS = (
     "设备声明",
     "structured workout",
@@ -83,7 +86,7 @@ class NativeAgentResult:
     final_html: str
     pass1: dict[str, Any]
     pass2: dict[str, Any]
-    final_validation: dict[str, bool]
+    final_validation: dict[str, Any]
 
 
 def _normalized_sha256(content: str) -> str:
@@ -210,6 +213,101 @@ def is_strict_html_document(text: str) -> bool:
     return bool(HTML_DOCTYPE_RE.match(candidate) or HTML_ROOT_RE.match(candidate)) and bool(HTML_CLOSE_RE.search(candidate))
 
 
+def _envelope_metadata(
+    *,
+    raw_envelope_strict: bool,
+    envelope_normalized: bool,
+    prefix_chars: int,
+    suffix_chars: int,
+    root_count: int,
+    close_count: int,
+) -> dict[str, Any]:
+    return {
+        "rawEnvelopeStrict": raw_envelope_strict,
+        "envelopeNormalized": envelope_normalized,
+        "envelopePrefixChars": prefix_chars,
+        "envelopeSuffixChars": suffix_chars,
+        "htmlRootCount": root_count,
+        "htmlCloseCount": close_count,
+    }
+
+
+def normalize_html_envelope(raw: str) -> tuple[str, dict[str, Any]]:
+    """Return the single HTML document inside an untrusted model envelope.
+
+    Only wrapper text outside one root document may be removed. The selected
+    document is sliced directly from ``raw`` so its internal bytes are not
+    rewritten. Ambiguous or structurally incomplete envelopes fail closed.
+    """
+
+    if not isinstance(raw, str):
+        raise NativeAgentError(
+            "pass2",
+            "invalid_html_envelope",
+            _envelope_metadata(
+                raw_envelope_strict=False,
+                envelope_normalized=False,
+                prefix_chars=0,
+                suffix_chars=0,
+                root_count=0,
+                close_count=0,
+            ),
+        )
+
+    root_matches = list(_HTML_ROOT_TAG_RE.finditer(raw))
+    close_matches = list(_HTML_CLOSE_TAG_RE.finditer(raw))
+    doctype_matches = list(_HTML_DOCTYPE_TAG_RE.finditer(raw))
+    root_count = len(root_matches)
+    close_count = len(close_matches)
+    base_metadata = _envelope_metadata(
+        raw_envelope_strict=False,
+        envelope_normalized=False,
+        prefix_chars=0,
+        suffix_chars=0,
+        root_count=root_count,
+        close_count=close_count,
+    )
+
+    if len(doctype_matches) > 1 or root_count > 1 or close_count > 1:
+        raise NativeAgentError("pass2", "ambiguous_html_envelope", base_metadata)
+    if root_count != 1 or close_count != 1:
+        raise NativeAgentError("pass2", "invalid_html_envelope", base_metadata)
+
+    root_match = root_matches[0]
+    close_match = close_matches[0]
+    if close_match.start() < root_match.end():
+        raise NativeAgentError("pass2", "invalid_html_envelope", base_metadata)
+
+    candidate = raw.strip()
+    raw_strict = bool(
+        (HTML_DOCTYPE_RE.match(candidate) or HTML_ROOT_RE.match(candidate))
+        and HTML_CLOSE_RE.search(candidate)
+    )
+    if raw_strict:
+        return raw, _envelope_metadata(
+            raw_envelope_strict=True,
+            envelope_normalized=False,
+            prefix_chars=0,
+            suffix_chars=0,
+            root_count=root_count,
+            close_count=close_count,
+        )
+
+    document_start = root_match.start()
+    if doctype_matches and doctype_matches[0].start() < root_match.start():
+        document_start = doctype_matches[0].start()
+    document_end = close_match.end()
+    normalized = raw[document_start:document_end]
+    return normalized, _envelope_metadata(
+        raw_envelope_strict=False,
+        envelope_normalized=True,
+        prefix_chars=document_start,
+        suffix_chars=len(raw) - document_end,
+        root_count=root_count,
+        close_count=close_count,
+    )
+
+
 class _VisibleTextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -239,22 +337,25 @@ def html_validation(text: str) -> dict[str, bool]:
     return validation
 
 
-def validate_native_final_html(text: str) -> dict[str, bool]:
+def validate_native_final_html(text: str) -> dict[str, Any]:
     validation = html_validation(text)
     if not validation["completeHtml"]:
-        validation["safeVisibleLanguage"] = False
+        validation["safeVisibleLanguage"] = None
+        validation["pngExport"] = None
         raise NativeAgentError("pass2", "incomplete_html", validation)
     parser = _VisibleTextParser()
     try:
         parser.feed(text)
         parser.close()
     except Exception:
-        validation["safeVisibleLanguage"] = False
+        validation["safeVisibleLanguage"] = None
+        validation["pngExport"] = None
         raise NativeAgentError("pass2", "malformed_html", validation) from None
     visible = " ".join(parser.parts).casefold()
     safe = not any(term.casefold() in visible for term in _FORBIDDEN_VISIBLE_TERMS)
     validation["safeVisibleLanguage"] = safe
     if not safe:
+        validation["pngExport"] = None
         raise NativeAgentError("pass2", "unsafe_visible_language", validation)
     validation["pngExport"] = bool(_PNG_BUTTON_RE.search(text) and _PNG_EXPORT_RE.search(text))
     if not validation["pngExport"]:
@@ -408,7 +509,18 @@ def run_native_agent(
         generator=generator,
         clock=clock,
     )
-    validation = validate_native_final_html(final_html)
+    try:
+        final_html, envelope_metadata = normalize_html_envelope(final_html)
+    except NativeAgentError as exc:
+        safe_metadata = dict(exc.safe_metadata)
+        safe_metadata.setdefault("safeVisibleLanguage", None)
+        safe_metadata.setdefault("pngExport", None)
+        raise NativeAgentError(exc.stage, exc.category, safe_metadata) from None
+    try:
+        validation = validate_native_final_html(final_html)
+    except NativeAgentError as exc:
+        raise NativeAgentError(exc.stage, exc.category, {**envelope_metadata, **exc.safe_metadata}) from None
+    validation = {**envelope_metadata, **validation}
     return NativeAgentResult(
         draft_html=draft_html,
         final_html=final_html,
