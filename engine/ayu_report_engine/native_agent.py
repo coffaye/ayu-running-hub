@@ -42,6 +42,55 @@ HTML_CLOSE_RE = re.compile(r"</html>\s*$", re.IGNORECASE)
 _HTML_DOCTYPE_TAG_RE = re.compile(r"<!doctype\s+html\s*>", re.IGNORECASE)
 _HTML_ROOT_TAG_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 _HTML_CLOSE_TAG_RE = re.compile(r"</html\s*>", re.IGNORECASE)
+_CSS_URL_RE = re.compile(r"url\s*\(\s*(?P<value>\"[^\"]*\"|'[^']*'|[^)]*)\)", re.IGNORECASE)
+_CSS_IMPORT_RE = re.compile(r"@import\b", re.IGNORECASE)
+_JS_DYNAMIC_EXTERNAL_URL_RE = re.compile(
+    r"""["'\x60](?:https?:|//|javascript:|data:(?!image/)|[a-z][a-z0-9+.-]*:)""",
+    re.IGNORECASE,
+)
+_JS_NETWORK_API_PATTERNS = (
+    ("fetch", re.compile(r"\bfetch\s*\(", re.IGNORECASE)),
+    ("XMLHttpRequest", re.compile(r"\bXMLHttpRequest\b", re.IGNORECASE)),
+    ("WebSocket", re.compile(r"\bWebSocket\b", re.IGNORECASE)),
+    ("EventSource", re.compile(r"\bEventSource\b", re.IGNORECASE)),
+    ("navigator.sendBeacon", re.compile(r"\bnavigator\s*\.\s*sendBeacon\s*\(", re.IGNORECASE)),
+    ("dynamic import", re.compile(r"\bimport\s*\(", re.IGNORECASE)),
+    ("Worker", re.compile(r"\bnew\s+Worker\s*\(", re.IGNORECASE)),
+    ("SharedWorker", re.compile(r"\bSharedWorker\b", re.IGNORECASE)),
+)
+_JS_NAVIGATION_PATTERNS = (
+    ("window.open", re.compile(r"\bwindow\s*\.\s*open\s*\(", re.IGNORECASE)),
+    ("location assignment", re.compile(r"\b(?:window\s*\.\s*)?location\s*=", re.IGNORECASE)),
+    ("document.location assignment", re.compile(r"\bdocument\s*\.\s*location\s*=", re.IGNORECASE)),
+    ("location.href", re.compile(r"\blocation\s*\.\s*href\s*=", re.IGNORECASE)),
+    ("location.assign", re.compile(r"\blocation\s*\.\s*assign\s*\(", re.IGNORECASE)),
+    ("location.replace", re.compile(r"\blocation\s*\.\s*replace\s*\(", re.IGNORECASE)),
+)
+_JS_DYNAMIC_RESOURCE_ASSIGNMENT_RE = re.compile(
+    r"\b(?:script|img|image|link|source|video|audio|track|iframe|object|embed)\s*\.\s*"
+    r"(?:src|href|data|poster)\s*=",
+    re.IGNORECASE,
+)
+_JS_DYNAMIC_RESOURCE_CREATION_RE = re.compile(
+    r"\bdocument\s*\.\s*createElement\s*\(\s*['\"]"
+    r"(?:script|img|image|link|source|video|audio|track|iframe|object|embed)['\"]",
+    re.IGNORECASE,
+)
+_HTML_SIZE_LIMIT = 100_000
+_BLOCKED_EMBEDDED_TAGS = frozenset({"iframe", "frame", "frameset", "object", "embed"})
+_RESOURCE_ATTRIBUTES = {
+    "script": frozenset({"src"}),
+    "img": frozenset({"src", "srcset"}),
+    "source": frozenset({"src", "srcset"}),
+    "video": frozenset({"src", "srcset", "poster"}),
+    "audio": frozenset({"src", "srcset"}),
+    "track": frozenset({"src"}),
+    "iframe": frozenset({"src", "srcdoc"}),
+    "embed": frozenset({"src"}),
+    "object": frozenset({"data"}),
+    "link": frozenset({"href"}),
+    "input": frozenset({"src"}),
+}
 _FORBIDDEN_VISIBLE_TERMS = (
     "设备声明",
     "structured workout",
@@ -308,6 +357,178 @@ def normalize_html_envelope(raw: str) -> tuple[str, dict[str, Any]]:
     )
 
 
+def _external_url_kind(value: str) -> str | None:
+    candidate = value.strip().strip("\"'").casefold()
+    if not candidate or candidate.startswith("#") or candidate.startswith("data:image/"):
+        return None
+    if candidate.startswith(("http:", "https:", "//", "javascript:")):
+        return "external"
+    if re.match(r"^[a-z][a-z0-9+.-]*:", candidate):
+        return "external"
+    return "relative"
+
+
+def _safety_violation(
+    category: str,
+    *,
+    tag: str | None = None,
+    attribute: str | None = None,
+    api: str | None = None,
+) -> tuple[str, str | None, str | None, str | None]:
+    return category, tag, attribute, api
+
+
+class _SelfContainedHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.violations: list[tuple[str, str | None, str | None, str | None]] = []
+        self._in_script = False
+        self._in_style = False
+        self._script_parts: list[str] = []
+        self._style_parts: list[str] = []
+        self._inline_js: list[tuple[str, str, str]] = []
+
+    def _add(self, violation: tuple[str, str | None, str | None, str | None]) -> None:
+        self.violations.append(violation)
+
+    def _scan_url(self, value: str, *, tag: str, attribute: str, navigation: bool = False) -> None:
+        if not value.strip():
+            return
+        if navigation:
+            if not value.strip().startswith("#"):
+                self._add(_safety_violation("unsafe_navigation", tag=tag, attribute=attribute))
+            return
+        if _external_url_kind(value) is not None:
+            category = "unsafe_navigation" if value.strip().casefold().startswith("javascript:") else "unsafe_external_resource"
+            self._add(_safety_violation(category, tag=tag, attribute=attribute))
+
+    def _scan_srcset(self, value: str, *, tag: str, attribute: str) -> None:
+        for candidate in value.split(","):
+            url = candidate.strip().split(None, 1)[0] if candidate.strip() else ""
+            self._scan_url(url, tag=tag, attribute=attribute)
+
+    def _scan_css(self, value: str, *, tag: str, attribute: str) -> None:
+        if _CSS_IMPORT_RE.search(value):
+            self._add(_safety_violation("unsafe_external_resource", tag=tag, attribute=attribute, api="css @import"))
+        for match in _CSS_URL_RE.finditer(value):
+            url = match.group("value").strip().strip("\"'")
+            if _external_url_kind(url) is not None:
+                self._add(_safety_violation("unsafe_external_resource", tag=tag, attribute=attribute, api="css url"))
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.casefold()
+        if tag in _BLOCKED_EMBEDDED_TAGS:
+            self._add(_safety_violation("unsafe_embedded_context", tag=tag))
+        if tag == "form":
+            self._add(_safety_violation("unsafe_form", tag=tag))
+
+        attributes = {name.casefold(): value or "" for name, value in attrs}
+        if tag == "meta" and attributes.get("http-equiv", "").strip().casefold() == "refresh":
+            self._add(_safety_violation("unsafe_navigation", tag=tag, attribute="http-equiv"))
+        if tag == "base" and attributes.get("href", "").strip():
+            self._add(_safety_violation("unsafe_navigation", tag=tag, attribute="href"))
+
+        for raw_name, raw_value in attrs:
+            name = raw_name.casefold()
+            value = raw_value or ""
+            if name in {"action", "formaction"}:
+                self._add(_safety_violation("unsafe_form", tag=tag, attribute=name))
+            if name == "style":
+                self._scan_css(value, tag=tag, attribute=name)
+            if name == "srcset":
+                self._scan_srcset(value, tag=tag, attribute=name)
+            if name == "poster":
+                self._scan_url(value, tag=tag, attribute=name)
+            if name.startswith("on") and value.strip():
+                self._inline_js.append((value, tag, name))
+
+            allowed_resource_attributes = _RESOURCE_ATTRIBUTES.get(tag, frozenset())
+            if name in allowed_resource_attributes:
+                if name == "srcset":
+                    continue
+                if name == "srcdoc":
+                    self._add(_safety_violation("unsafe_embedded_context", tag=tag, attribute=name))
+                else:
+                    self._scan_url(value, tag=tag, attribute=name)
+            if tag == "a" and name == "href":
+                self._scan_url(value, tag=tag, attribute=name, navigation=True)
+
+        if tag == "script":
+            self._in_script = True
+        elif tag == "style":
+            self._in_style = True
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.casefold()
+        if tag == "script":
+            self._in_script = False
+        elif tag == "style":
+            self._in_style = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script:
+            self._script_parts.append(data)
+        elif self._in_style:
+            self._style_parts.append(data)
+
+    def scan_inline_code(self) -> None:
+        sources = [(" ".join(self._script_parts), "script", "inline")]
+        sources.extend(self._inline_js)
+        for source, tag, attribute in sources:
+            for api, pattern in _JS_NETWORK_API_PATTERNS:
+                if pattern.search(source):
+                    self._add(_safety_violation("unsafe_network_api", tag=tag, attribute=attribute, api=api))
+                    break
+            else:
+                for api, pattern in _JS_NAVIGATION_PATTERNS:
+                    if pattern.search(source):
+                        self._add(_safety_violation("unsafe_navigation", tag=tag, attribute=attribute, api=api))
+                        break
+                else:
+                    if _JS_DYNAMIC_RESOURCE_ASSIGNMENT_RE.search(source) or _JS_DYNAMIC_RESOURCE_CREATION_RE.search(source):
+                        self._add(_safety_violation("unsafe_external_resource", tag=tag, attribute="dynamic-resource", api="resource_creation"))
+                    elif _JS_DYNAMIC_EXTERNAL_URL_RE.search(source):
+                        self._add(_safety_violation("unsafe_external_resource", tag=tag, attribute="dynamic-url", api="resource_creation"))
+
+        self._scan_css(" ".join(self._style_parts), tag="style", attribute="text")
+
+
+def validate_self_contained_html(text: str) -> dict[str, Any]:
+    """Reject active external-resource and browser-network capabilities."""
+
+    if len(text) > _HTML_SIZE_LIMIT:
+        raise NativeAgentError(
+            "pass2",
+            "html_size_limit",
+            {"selfContainedSafety": False, "safetyCount": 1, "safetyApi": "html_size_limit"},
+        )
+    parser = _SelfContainedHTMLParser()
+    try:
+        parser.feed(text)
+        parser.close()
+    except Exception:
+        raise NativeAgentError(
+            "pass2",
+            "malformed_html",
+            {"selfContainedSafety": False},
+        ) from None
+    parser.scan_inline_code()
+    if parser.violations:
+        category, tag, attribute, api = parser.violations[0]
+        metadata: dict[str, Any] = {
+            "selfContainedSafety": False,
+            "safetyCount": len(parser.violations),
+        }
+        if tag is not None:
+            metadata["safetyTag"] = tag
+        if attribute is not None:
+            metadata["safetyAttribute"] = attribute
+        if api is not None:
+            metadata["safetyApi"] = api
+        raise NativeAgentError("pass2", category, metadata)
+    return {"selfContainedSafety": True}
+
+
 class _VisibleTextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -341,8 +562,13 @@ def validate_native_final_html(text: str) -> dict[str, Any]:
     validation = html_validation(text)
     if not validation["completeHtml"]:
         validation["safeVisibleLanguage"] = None
+        validation["selfContainedSafety"] = None
         validation["pngExport"] = None
         raise NativeAgentError("pass2", "incomplete_html", validation)
+    try:
+        validation.update(validate_self_contained_html(text))
+    except NativeAgentError as exc:
+        raise NativeAgentError("pass2", exc.category, {**validation, **exc.safe_metadata}) from None
     parser = _VisibleTextParser()
     try:
         parser.feed(text)

@@ -19,6 +19,7 @@ from ayu_report_engine.native_agent import (
     native_manifest_provenance,
     normalize_html_envelope,
     run_native_agent,
+    validate_self_contained_html,
     validate_native_final_html,
 )
 from ayu_report_engine.native_input import (
@@ -221,6 +222,126 @@ def test_normalized_html_still_requires_png_export():
     assert missing_png.value.category == "missing_png_export"
     assert missing_png.value.safe_metadata["safeVisibleLanguage"] is True
     assert missing_png.value.safe_metadata["pngExport"] is False
+
+
+def _safety_html(body: str = "clean", *, head: str = "") -> str:
+    return (
+        "<!DOCTYPE html><html><head>"
+        + head
+        + "</head><body>"
+        + body
+        + "<button type=\"button\">下载 PNG</button>"
+        "<canvas id=\"pngCanvas\"></canvas>"
+        "<script>canvas.toBlob(() => {});</script>"
+        "</body></html>"
+    )
+
+
+def test_self_contained_safety_accepts_inline_css_js_canvas_fragments_and_data_images():
+    text = _safety_html(
+        '<a href="#details">详情</a><img src="data:image/png;base64,AAAA" alt="chart">',
+        head="<style>.card { background: linear-gradient(#111, #222); }</style>",
+    )
+    assert validate_self_contained_html(text) == {"selfContainedSafety": True}
+    validation = validate_native_final_html(text)
+    assert validation["selfContainedSafety"] is True
+    assert validation["safeVisibleLanguage"] is True
+    assert validation["pngExport"] is True
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    (
+        ('<script src="https://cdn.example.test/report.js"></script>', "unsafe_external_resource"),
+        ('<img src="http://cdn.example.test/chart.png">', "unsafe_external_resource"),
+        ('<img src="//cdn.example.test/chart.png">', "unsafe_external_resource"),
+        ('<img src="images/chart.png">', "unsafe_external_resource"),
+        ('<link href="/styles/report.css" rel="stylesheet">', "unsafe_external_resource"),
+        ('<img src="javascript:alert(1)">', "unsafe_navigation"),
+        ('<img srcset="https://cdn.example.test/a.png 1x, data:image/png;base64,AAAA 2x">', "unsafe_external_resource"),
+        ('<source src="https://cdn.example.test/audio.mp3">', "unsafe_external_resource"),
+        ('<video poster="https://cdn.example.test/poster.png"></video>', "unsafe_external_resource"),
+        ('<audio src="https://cdn.example.test/audio.mp3"></audio>', "unsafe_external_resource"),
+        ('<track src="https://cdn.example.test/captions.vtt">', "unsafe_external_resource"),
+        ('<iframe src="https://cdn.example.test/frame.html"></iframe>', "unsafe_embedded_context"),
+        ('<object data="https://cdn.example.test/object"></object>', "unsafe_embedded_context"),
+        ('<embed src="https://cdn.example.test/plugin.swf">', "unsafe_embedded_context"),
+        ('<form action="https://cdn.example.test/submit"></form>', "unsafe_form"),
+        ('<button formaction="https://cdn.example.test/submit">send</button>', "unsafe_form"),
+        ('<meta http-equiv="refresh" content="0;url=https://cdn.example.test/">', "unsafe_navigation"),
+        ('<base href="https://cdn.example.test/">', "unsafe_navigation"),
+        ('<a href="https://cdn.example.test/details">external</a>', "unsafe_navigation"),
+        ('<a href="javascript:void(0)">external</a>', "unsafe_navigation"),
+        ('<style>@import url("https://cdn.example.test/theme.css");</style>', "unsafe_external_resource"),
+        ('<style>.chart { background-image: url(https://cdn.example.test/chart.png); }</style>', "unsafe_external_resource"),
+        ('<div style="background: url(https://cdn.example.test/bg.png)">x</div>', "unsafe_external_resource"),
+        ('<script>fetch("https://cdn.example.test/data.json");</script>', "unsafe_network_api"),
+        ('<script>const request = new XMLHttpRequest();</script>', "unsafe_network_api"),
+        ('<script>const socket = new WebSocket("wss://cdn.example.test");</script>', "unsafe_network_api"),
+        ('<script>const events = new EventSource("/events");</script>', "unsafe_network_api"),
+        ('<script>navigator.sendBeacon("/events", "x");</script>', "unsafe_network_api"),
+        ('<script>import("/module.js");</script>', "unsafe_network_api"),
+        ('<script>new Worker("/worker.js");</script>', "unsafe_network_api"),
+        ('<script>new SharedWorker("/worker.js");</script>', "unsafe_network_api"),
+        ('<script>window.open("https://cdn.example.test");</script>', "unsafe_navigation"),
+        ('<script>location = "https://cdn.example.test";</script>', "unsafe_navigation"),
+        ('<script>document.location = "/other";</script>', "unsafe_navigation"),
+        ('<script>location.href = "/other";</script>', "unsafe_navigation"),
+        ('<script>location.assign("/other");</script>', "unsafe_navigation"),
+        ('<script>location.replace("/other");</script>', "unsafe_navigation"),
+        ('<script>const script = document.createElement("script");</script>', "unsafe_external_resource"),
+        ('<script>image.src = "https://cdn.example.test/chart.png";</script>', "unsafe_external_resource"),
+        ('<script>const endpoint = "https://cdn.example.test/data";</script>', "unsafe_external_resource"),
+        ('<script>const endpoint = \x60https://cdn.example.test/data\x60;</script>', "unsafe_external_resource"),
+    ),
+)
+def test_self_contained_safety_rejects_external_resources_and_browser_escape_hatches(body: str, expected: str):
+    with pytest.raises(NativeAgentError) as exc_info:
+        validate_self_contained_html(_safety_html(body))
+    assert exc_info.value.category == expected
+    safe = exc_info.value.to_safe_dict()
+    assert "cdn.example.test" not in json.dumps(safe)
+    assert "alert(1)" not in json.dumps(safe)
+    assert "<script>" not in json.dumps(safe)
+
+
+def test_self_contained_safety_rejects_oversized_html_without_rewriting():
+    oversized = _safety_html("x" * 100_001)
+    with pytest.raises(NativeAgentError) as exc_info:
+        validate_self_contained_html(oversized)
+    assert exc_info.value.category == "html_size_limit"
+    assert exc_info.value.safe_metadata == {
+        "selfContainedSafety": False,
+        "safetyCount": 1,
+        "safetyApi": "html_size_limit",
+    }
+
+
+def test_self_contained_safety_runs_after_envelope_normalization_and_does_not_publish_wrapper():
+    raw = "model preface with https://private.example.test/secret\n" + _safety_html(
+        '<img src="https://cdn.example.test/chart.png">\n<script>alert("secret")</script>'
+    ) + "\nmodel postscript"
+    normalized, envelope = normalize_html_envelope(raw)
+    assert envelope["envelopeNormalized"] is True
+    with pytest.raises(NativeAgentError) as exc_info:
+        validate_native_final_html(normalized)
+    safe = exc_info.value.to_safe_dict()
+    assert exc_info.value.category == "unsafe_external_resource"
+    assert "private.example.test" not in json.dumps(safe)
+    assert "cdn.example.test" not in json.dumps(safe)
+    assert "secret" not in json.dumps(safe)
+
+
+def test_run_native_agent_reports_safety_metadata_only_after_each_gate_passes():
+    def generator(_config: DeepSeekConfig, request: dict[str, Any]):
+        if "Draft HTML to review" in request["input"]:
+            return _html("final"), {}
+        return _html("draft"), {}
+
+    result = run_native_agent(material(), native_input(), _config(), generator=generator)
+    assert result.final_validation["selfContainedSafety"] is True
+    assert result.final_validation["safeVisibleLanguage"] is True
+    assert result.final_validation["pngExport"] is True
 
 
 @pytest.mark.parametrize(
