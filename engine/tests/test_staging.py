@@ -66,10 +66,13 @@ class StagingBuildTests(unittest.TestCase):
         workflow = (HUB_ROOT / ".github" / "workflows" / "generate-report.yml").read_text(encoding="utf-8")
         generator = (HUB_ROOT / "scripts" / "generate_report.py").read_text(encoding="utf-8")
         self.assertNotIn("load_running_page_context", generator)
-        self.assertIn("context_from_coros_bundle", generator)
+        self.assertNotIn("context_from_coros_bundle", generator)
         self.assertIn("PHASE6_COLLECTOR_URL", workflow)
         self.assertIn("AYU_COLLECTOR_SHARED_SECRET", workflow)
-        self.assertIn("DEEPSEEK_TIMEOUT_SECONDS: '90'", workflow)
+        self.assertIn("DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-flash' }}", workflow)
+        self.assertIn("DEEPSEEK_REASONING_EFFORT: ${{ vars.DEEPSEEK_REASONING_EFFORT || 'high' }}", workflow)
+        self.assertIn("DEEPSEEK_MAX_OUTPUT_TOKENS: ${{ vars.DEEPSEEK_MAX_OUTPUT_TOKENS || '65536' }}", workflow)
+        self.assertIn("DEEPSEEK_TIMEOUT_SECONDS: '300'", workflow)
         self.assertIn("RUNNING_PAGE_BRANCH: master", workflow)
 
     def test_atomic_replace_updates_html_and_manifest(self) -> None:
