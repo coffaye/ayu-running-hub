@@ -111,6 +111,24 @@ def _config() -> DeepSeekConfig:
     return DeepSeekConfig(api_key="test-key", model="deepseek-flash", reasoning_effort="high", max_output_tokens=65536, timeout_seconds=300)
 
 
+def test_both_native_passes_receive_the_existing_self_contained_safety_contract():
+    source = native_input()
+    skill = material()
+    requests = (
+        build_model_request(skill, source),
+        build_review_request(skill, source, "<!DOCTYPE html><html><body>draft</body></html>"),
+    )
+    for request in requests:
+        instructions = request["instructions"]
+        assert "strict self-contained browser safety boundary" in instructions
+        assert "do not create resource elements" in instructions
+        assert "Canvas 2D" in instructions
+        assert "downloadAnchor" in instructions
+        assert "revoke the object URL" in instructions
+        assert "Golden" not in instructions
+        assert '"shortTermLoad": 187' in request["input"]
+
+
 def _html(label: str) -> str:
     return (
         "<!DOCTYPE html><html><body>"
