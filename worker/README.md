@@ -15,6 +15,11 @@ Auth and keeps the isolated Phase 6 COROS collector Worker separate.
 - `GET /api/status/<run_id>` normalizes GitHub workflow state and never exposes
   the provider payload or tokens.
 
+Failed workflows are reconciled with GitHub on status reads: an operator can
+rerun the same workflow after restoring an expired COROS authorization without
+the status API permanently returning the old failure. Status reads never
+dispatch another workflow; unavailable GitHub status remains fail-closed.
+
 `REPORT_AUTH_USERNAME` defaults to `ayu` as a normal Worker variable.
 `REPORT_AUTH_PASSWORD` and `HUB_ACTIONS_TOKEN` are Cloudflare Secrets limited to
 this staging boundary. The Worker never receives `DEEPSEEK_API_KEY` or the token
@@ -93,3 +98,10 @@ diagnostic probe, and remove the bootstrap secret again. A COROS account-side
 authorization revoke is separate from local cache deletion; the public client
 used by the official gateway helper cannot programmatically revoke through the
 provider endpoint.
+
+Use a fresh dedicated automation cache for reauthorization, never a Codex or
+other interactive client's token cache. After successful bootstrap, clear the
+local cache without revoking the grant: the production broker must be the only
+owner of the rotating refresh-token lifecycle. If Wrangler's own login has
+expired, complete its official browser/device login first. No password, token,
+OAuth callback or bootstrap secret should be pasted into chat or committed.

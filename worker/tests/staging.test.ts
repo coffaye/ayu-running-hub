@@ -253,6 +253,73 @@ test('missing, malformed and incorrect Basic Auth uniformly return 401 with a ch
   }
 });
 
+test('failed report status follows the original GitHub rerun without dispatching again', async () => {
+  for (const [status, conclusion, expected] of [
+    ['queued', null, 'queued'],
+    ['in_progress', null, 'running'],
+    ['completed', 'success', 'success'],
+    ['completed', 'failure', 'failure'],
+  ] as const) {
+    let record: LockRecord = {
+      runId: '123', requestId: 'original-request', workflowRunId: 77,
+      workflowUrl: 'https://github/run/77', state: 'failure', createdAt: 1, updatedAt: 2,
+    };
+    let statusCalls = 0;
+    const stub = {
+      async fetch(request: Request): Promise<Response> {
+        const path = new URL(request.url).pathname;
+        if (path === '/status') return Response.json({ record });
+        assert.ok(path === '/workflow' || path === '/release');
+        const body = await request.json() as Partial<LockRecord>;
+        record = { ...record, ...body };
+        return Response.json({ record });
+      },
+    };
+    const testApp = createApp({
+      createGithubClient: () => ({
+        runExists: async () => true,
+        dispatch: async () => { throw new Error('status must not generate another report'); },
+        getWorkflowRun: async (id: number) => {
+          assert.equal(id, 77);
+          statusCalls += 1;
+          return { status, conclusion, htmlUrl: 'https://github/run/77' };
+        },
+        getLiveReportUrl: async () => 'https://coffaye.github.io/running_page/reports/daily/2026-10-18/123.html',
+      }),
+    });
+    const response = await testApp.fetch(new Request('https://staging.example/api/status/123', {
+      headers: { authorization: basic('ayu', 'test-password') },
+    }), { ...authEnv, REPORT_GENERATION_LOCK: { idFromName: () => ({}), get: () => stub } });
+    assert.equal(response.status, 200);
+    const value = await response.json() as Record<string, unknown>;
+    assert.equal(value.state, expected);
+    assert.equal(statusCalls, 1);
+    assert.equal(record.workflowRunId, 77);
+    assert.equal(record.requestId, 'original-request');
+    if (expected === 'success') assert.match(String(value.reportUrl), /reports\/daily\//);
+  }
+});
+
+test('failed report status stays failed when GitHub status is unavailable', async () => {
+  const record: LockRecord = {
+    runId: '123', requestId: 'original-request', workflowRunId: 77,
+    workflowUrl: 'https://github/run/77', state: 'failure', createdAt: 1, updatedAt: 2,
+  };
+  const testApp = createApp({
+    createGithubClient: () => ({
+      runExists: async () => true,
+      dispatch: async () => { throw new Error('unexpected dispatch'); },
+      getWorkflowRun: async () => { throw new Error('temporary GitHub outage'); },
+    }),
+  });
+  const response = await testApp.fetch(new Request('https://staging.example/api/status/123', {
+    headers: { authorization: basic('ayu', 'test-password') },
+  }), { ...authEnv, REPORT_GENERATION_LOCK: {
+    idFromName: () => ({}), get: () => ({ fetch: async () => Response.json({ record }) }),
+  } });
+  assert.equal((await response.json() as Record<string, unknown>).state, 'failure');
+});
+
 test('all generation and status paths require Basic Auth, while a valid user reaches the page', async () => {
   for (const path of ['/generate?run_id=123', '/api/generate', '/api/status/123']) {
     const response = await app.fetch(new Request(`https://staging.example${path}`), authEnv);

@@ -154,7 +154,9 @@ const status = async (runId: string, env: Env, dependencies: Required<WorkerDepe
   if (!response.ok) return jsonResponse({ error: 'generation not found' }, 404);
   const value = (await response.json()) as { record: LockRecord | null };
   if (!value.record) return jsonResponse({ error: 'generation not found' }, 404);
-  if (!value.record.workflowRunId || value.record.state === 'failure' || value.record.state === 'success') {
+  // A failed GitHub run can be rerun after an external authorization repair.
+  // Reconcile its current state instead of permanently caching the first failure.
+  if (!value.record.workflowRunId || value.record.state === 'success') {
     const result = statusFromLock(value.record);
     if (result.state === 'success') {
       try {
