@@ -125,6 +125,7 @@ def test_both_native_passes_receive_the_existing_self_contained_safety_contract(
         assert "Canvas 2D" in instructions
         assert "downloadAnchor" in instructions
         assert "revoke the object URL" in instructions
+        assert "next absolute y coordinate" in instructions
         assert "Golden" not in instructions
         assert '"shortTermLoad": 187' in request["input"]
 

@@ -20,6 +20,13 @@ fallback was introduced, and no extra model-call or safety-retry path was added.
 The model configuration, two-pass design, Native Skill snapshot, input adapter,
 collector, and training facts remain unchanged.
 
+Browser PNG QA of the recovered report additionally caught a generated layout
+helper returning only the font size where the caller expected the next absolute
+y position. That report receives a one-line Canvas-only hotfix, with the original
+HTML digest recorded in its manifest entry. The generation instructions now
+explicitly distinguish an absolute layout cursor from a consumed text height;
+no training narrative or report facts are rewritten by the artifact hotfix.
+
 Separately, failed status records now recheck the original GitHub workflow so
 operator reruns cannot remain permanently displayed as the initial failure.
 This status read does not dispatch generation and fails closed on API errors.
