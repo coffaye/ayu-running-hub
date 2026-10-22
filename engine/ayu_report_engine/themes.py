@@ -31,6 +31,10 @@ def theme_instructions(value: str = "black-green") -> str:
         "Do not change facts, scores, completion, training type or load state to fit the theme. "
         f"Set <body data-ayu-theme=\"{theme}\">. In a script define exactly "
         f"const AYU_THEME_TOKENS={tokens}; then use that object's bg/ink/accent in the Canvas exporter. "
+        "Read AYU_THEME_TOKENS.bg / .ink / .accent directly or use a distinctly named ayuPalette. "
+        "Never name a palette alias T, P, F or another drawing-helper name. JavaScript function "
+        "declarations can be overwritten by a var assignment in the same scope: do not create "
+        "a variable and drawing function with the same identifier. Keep helper and palette names distinct. "
         "In inline CSS set :root variables --ayu-bg, --ayu-ink, --ayu-accent to the same values "
         "and use them for the page background, primary text and accent. Both HTML and PNG must "
         "share this palette. Keep 明日课表： as the neutral label and render the workout name once "
@@ -51,6 +55,13 @@ def validate_theme_html(html: str, theme: str) -> dict:
     try: tokens = json.loads(match.group(1)) if match else None
     except json.JSONDecodeError: tokens = None
     if tokens != THEMES[theme]: raise ValueError("Canvas theme tokens do not match requested theme")
+    # Catch the demonstrated Native export regression without classifying prose
+    # or attempting to rewrite the model's approved HTML.
+    scripts = "\n".join(re.findall(r"<script\b[^>]*>(.*?)</script>", html, re.I | re.S))
+    aliases = re.findall(r"\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*AYU_THEME_TOKENS\s*;", scripts)
+    for alias in aliases:
+        if re.search(r"\bfunction\s+" + re.escape(alias) + r"\s*\(", scripts):
+            raise ValueError("Canvas palette alias conflicts with drawing helper")
     styles = "\n".join(re.findall(r"<style\b[^>]*>(.*?)</style>", html, re.I | re.S))
     for key, color in THEMES[theme].items():
         if not re.search(r"--ayu-" + key + r"\s*:\s*" + re.escape(color) + r"\s*[;}]", styles, re.I):

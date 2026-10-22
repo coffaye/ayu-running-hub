@@ -25,3 +25,8 @@ def test_theme_gate_rejects_wrong_theme_and_stale_canvas_palette():
     with pytest.raises(ValueError):validate_theme_html(html,'burgundy')
     with pytest.raises(ValueError):normalize_theme('all')
     assert normalize_theme()=='black-green'
+
+
+def test_theme_gate_rejects_demonstrated_palette_helper_collision():
+    html=themed_html('burgundy').replace('</script>','var T=AYU_THEME_TOKENS;function T(s,x,y){return y+20;}</script>')
+    with pytest.raises(ValueError,match='conflicts'):validate_theme_html(html,'burgundy')
