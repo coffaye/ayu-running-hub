@@ -24,6 +24,7 @@ from .deepseek import (
     _response_safe_metadata,
 )
 from .native_input import assert_private_fields_absent
+from .themes import normalize_theme, theme_instructions, validate_theme_html
 
 
 NATIVE_REFERENCE_FILES = (
@@ -34,6 +35,7 @@ NATIVE_REFERENCE_FILES = (
     "references/shadowrunner/voice-and-views.md",
     "references/design-system.md",
     "references/png-export.md",
+    "references/themes.md",
 )
 
 HTML_DOCTYPE_RE = re.compile(r"^<!doctype\s+html>", re.IGNORECASE)
@@ -232,7 +234,7 @@ def build_model_request(material: NativeMaterial, native_input: Mapping[str, Any
         "interpretations, hypotheses, and missing data. Never expose internal identifiers, routes, "
         "coordinates, credentials, provider payloads, or hidden reasoning. Do not fabricate weather, "
         "recovery, load, or future schedule information.\n\n"
-        + reference_text
+        + reference_text + "\n\n" + theme_instructions(normalize_theme(native_input.get("reportTheme", "black-green")))
     )
     return {
         "instructions": instructions,
@@ -799,6 +801,11 @@ def run_native_agent(
     except NativeAgentError as exc:
         raise NativeAgentError(exc.stage, exc.category, {**envelope_metadata, **exc.safe_metadata}) from None
     validation = {**envelope_metadata, **validation}
+    if "reportTheme" in native_input:
+        try:
+            validation.update(validate_theme_html(final_html, native_input["reportTheme"]))
+        except ValueError:
+            raise NativeAgentError("pass2", "theme_mismatch", {**validation, "themeValidation": False}) from None
     return NativeAgentResult(
         draft_html=draft_html,
         final_html=final_html,

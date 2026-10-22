@@ -1,4 +1,4 @@
-import { acquireLock, type LockRecord, type LockState } from './core.ts';
+import { acquireLock, normalizeTheme, type LockRecord, type LockState, type ReportTheme } from './core.ts';
 
 export interface SqlCursorLike {
   toArray?: () => Array<Record<string, unknown>>;
@@ -32,6 +32,7 @@ export class RunGenerationLock {
   }
 
   private async read(): Promise<LockRecord | null> {
+    const presentation = await this.state.storage.get<{ requestId: string; theme: ReportTheme }>('presentation');
     if (this.state.storage.sql) {
       this.ensureSqlite();
       const rows = this.state.storage.sql.exec('SELECT run_id, workflow_run_id, workflow_url, request_id, state, created_at, updated_at FROM locks WHERE id = 1').toArray?.() ?? [];
@@ -45,6 +46,7 @@ export class RunGenerationLock {
           state: String(row.state) as LockState,
           createdAt: Number(row.created_at),
           updatedAt: Number(row.updated_at),
+          theme: presentation?.requestId === String(row.request_id) ? presentation.theme : 'black-green',
         };
       }
       return null;
@@ -53,6 +55,7 @@ export class RunGenerationLock {
   }
 
   private async write(record: LockRecord): Promise<void> {
+    await this.state.storage.put('presentation', { requestId: record.requestId, theme: record.theme ?? 'black-green' });
     if (this.state.storage.sql) {
       this.ensureSqlite();
       this.state.storage.sql.exec(
@@ -77,7 +80,8 @@ export class RunGenerationLock {
       if (url.pathname === '/acquire') {
         const runId = url.searchParams.get('run_id') ?? '';
         const requestId = url.searchParams.get('request_id') ?? '';
-        const result = acquireLock(current, runId, requestId, Date.now(), ACTIVE_TTL_MS);
+        const theme = normalizeTheme(url.searchParams.get('theme') ?? 'black-green');
+        const result = acquireLock(current, runId, requestId, Date.now(), ACTIVE_TTL_MS, theme);
         if (result.created) await this.write(result.record);
         return Response.json({ created: result.created, record: result.record });
       }

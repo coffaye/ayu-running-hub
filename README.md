@@ -1,5 +1,28 @@
 # Ayu Running Hub
 
+## Four-theme production update (2026-10-22)
+
+The active production path is the Native Skill Agent (two HTML passes), not the
+legacy deterministic StructuredReport renderer described in older sections below.
+The generation page now offers `black-green` (default), `burgundy`, `blue` and
+`violet`. `POST /api/generate` accepts `runId` and optional allowlisted `theme`;
+the Worker forwards it through workflow_dispatch to `generate_report.py --theme`.
+Existing callers without theme remain compatible. Opening the page alone never
+dispatches: choose a theme and click **生成日报**.
+
+The Native reference snapshot includes `references/themes.md`. One theme is
+requested per report; the final artifact must have its matching body marker,
+HTML palette and Canvas palette before atomic installation. A mismatched theme
+fails closed and leaves the previous ready report available. No model/provider,
+authentication, routing, target branch or publication API modernization is part
+of this change. Same-run/same-theme requests deduplicate; another active theme
+returns 409. Locks remain per-run, so different runs can still proceed in parallel.
+
+The public report URL and manifest key remain one-per-run: a successful later
+theme replaces the current presentation, while old reports are not bulk-rewritten.
+The manifest records the selected theme. Local Codex Skill reports additionally
+support weekly/monthly modes and theme-suffixed filenames.
+
 The independent, deterministic report engine for Ayu Running. This repository
 owns the report contract and the implementation that future automation can
 call; the Codex plugin wrapper and the `running_page` UI remain separate
@@ -76,8 +99,8 @@ the repository split record.
 
 ## Production report boundary
 
-`.github/workflows/generate-report.yml` accepts only string `run_id` and a
-Worker-generated `request_id`. It checks that the identity exists in
+`.github/workflows/generate-report.yml` accepts string `run_id`, a
+Worker-generated `request_id`, and an optional allowlisted `theme`. It checks that the identity exists in
 `coffaye/running_page@master`, fetches training facts from the signed Phase 6
 COROS Daily Bundle endpoint, analyzes with the configured DeepSeek variables,
 and publishes only the requested report plus its manifest entry to

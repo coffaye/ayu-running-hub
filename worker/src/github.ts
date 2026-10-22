@@ -4,6 +4,7 @@ import {
   parseDispatchResponse,
   runExistsInActivities,
   type DispatchDetails,
+  type ReportTheme,
 } from './core.ts';
 
 export interface GithubClientConfig {
@@ -49,11 +50,11 @@ export class GithubClient {
     return response;
   }
 
-  async dispatch(runId: string, requestId: string): Promise<DispatchDetails> {
+  async dispatch(runId: string, requestId: string, theme?: ReportTheme): Promise<DispatchDetails> {
     const normalized = normalizeRunId(runId);
     const response = await this.request(
       `/repos/${this.config.repository}/actions/workflows/${this.config.workflow}/dispatches?return_run_details=true`,
-      { method: 'POST', body: JSON.stringify(buildDispatchPayload(normalized, requestId)) }
+      { method: 'POST', body: JSON.stringify(buildDispatchPayload(normalized, requestId, theme)) }
     );
     if (!response.ok) {
       console.error('GitHub workflow dispatch failed', { status: response.status });

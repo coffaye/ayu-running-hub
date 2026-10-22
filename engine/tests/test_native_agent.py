@@ -92,7 +92,7 @@ def test_native_material_uses_vendored_reference_chain_and_hashes():
     assert all(value.file_sha256.values())
     provenance = native_manifest_provenance(value)
     assert provenance["nativeRuntimeVersion"] == "native-agent-runtime-v1"
-    assert provenance["nativeSkillSnapshotSha256"] == "7c23f7c28643bc0d62d84afb2a8a782fb966879e8e8f30658a4944bd57ee2708"
+    assert provenance["nativeSkillSnapshotSha256"] == "fd6a42dabfb2c4fac0fce352de1a86799c3af426cc0d02a21f59c5791e94b085"
 
 
 def test_native_requests_are_html_only_and_do_not_use_legacy_contract():

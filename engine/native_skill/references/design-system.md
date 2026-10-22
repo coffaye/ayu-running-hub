@@ -1,6 +1,6 @@
 # Ayu Running design system
 
-Use this visual system for every daily, weekly, and monthly report.
+Default system: black-green. For all reports read references/themes.md; the request's selected theme overrides palette, typography and composition below. Apply the same selected theme to HTML and PNG. The Native runtime provides exact presentation tokens. Do not run local scripts or require external design skills in this isolated online runtime.
 
 ## Identity
 

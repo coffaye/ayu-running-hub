@@ -100,6 +100,8 @@ description: 连接并检查 COROS MCP，使用内置的 COROS Workout Review �
 
 ## 报告交付
 
+主题由本次请求的 reportTheme 决定；未指定时黑绿。读取 references/themes.md，仅输出 black-green / burgundy / blue / violet 中选中的一套。主题覆盖本文件旧版固定黑绿的视觉措辞，事实、安全、分析与快速生成要求保持不变。标题仍为 10–22 可见字符的短结论。此线上隔离环境直接输出完整 HTML，不调用本地模板脚本。
+
 当用户要报告时，始终生成独立响应式 HTML，并包含 `下载 PNG` 按钮：
 
 - 日报：`ayu_running_daily_YYYY-MM-DD.html`

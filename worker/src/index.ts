@@ -4,7 +4,7 @@ import {
   verifyBasicCredentials,
   verifyCollectorRequest,
 } from './auth.ts';
-import { normalizeRunId, type LockRecord } from './core.ts';
+import { normalizeRunId, normalizeTheme, type LockRecord, type ReportTheme } from './core.ts';
 import { CorosCredentialBroker, CorosBrokerError } from './coros.ts';
 import { GithubClient } from './github.ts';
 import { RunGenerationLock } from './lock.ts';
@@ -20,7 +20,7 @@ export interface DurableObjectNamespaceLike {
 
 export interface GithubClientLike {
   runExists: (runId: string) => Promise<boolean>;
-  dispatch: (runId: string, requestId: string) => Promise<{
+  dispatch: (runId: string, requestId: string, theme?: ReportTheme) => Promise<{
     workflowRunId: number;
     runUrl: string;
     htmlUrl: string;
@@ -75,7 +75,8 @@ const lockRequest = (path: string, runId: string, init: RequestInit = {}) =>
 export const validateGenerateBody = (value: unknown): string => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request body must be an object');
   const keys = Object.keys(value as Record<string, unknown>);
-  if (keys.length !== 1 || keys[0] !== 'runId') throw new Error('only runId is accepted');
+  if (!keys.includes('runId') || keys.some(key => key !== 'runId' && key !== 'theme')) throw new Error('only runId and optional theme are accepted');
+  normalizeTheme((value as Record<string, unknown>).theme);
   return normalizeRunId((value as Record<string, unknown>).runId);
 };
 
@@ -122,8 +123,11 @@ const authenticate = async (request: Request, env: Env): Promise<Response | null
 
 const generate = async (request: Request, env: Env, dependencies: Required<WorkerDependencies>): Promise<Response> => {
   let runId: string;
+  let theme: ReportTheme;
   try {
-    runId = validateGenerateBody(await request.json());
+    const body = await request.json() as Record<string, unknown>;
+    runId = validateGenerateBody(body);
+    theme = normalizeTheme(body.theme);
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'invalid request' }, 400);
   }
@@ -131,14 +135,17 @@ const generate = async (request: Request, env: Env, dependencies: Required<Worke
   if (!(await client.runExists(runId))) return jsonResponse({ error: 'run_id not found in running_page master' }, 404);
   const requestId = crypto.randomUUID();
   const stub = lockStub(env, runId);
-  const acquired = await stub.fetch(lockRequest(`/acquire?request_id=${encodeURIComponent(requestId)}`, runId));
+  const acquired = await stub.fetch(lockRequest(`/acquire?request_id=${encodeURIComponent(requestId)}&theme=${theme}`, runId));
   const acquiredValue = (await acquired.json()) as { created: boolean; record: LockRecord };
   if (!acquiredValue.created) {
+    if ((acquiredValue.record.theme ?? 'black-green') !== theme) {
+      return jsonResponse({ error: '此训练正在生成另一主题，请完成后再切换。', activeTheme: acquiredValue.record.theme ?? 'black-green' }, 409);
+    }
     const settled = await awaitWorkflowAssignment(stub, runId, acquiredValue.record, dependencies.sleep);
     return jsonResponse(statusFromLock(settled), 202);
   }
   try {
-    const dispatch = await client.dispatch(runId, requestId);
+    const dispatch = await client.dispatch(runId, requestId, theme);
     const updated = await stub.fetch(lockRequest('/workflow', runId, { method: 'POST', body: JSON.stringify({ workflowRunId: dispatch.workflowRunId, workflowUrl: dispatch.htmlUrl, state: 'queued' }) }));
     const updatedValue = (await updated.json()) as { record: LockRecord };
     return jsonResponse(statusFromLock(updatedValue.record), 202);

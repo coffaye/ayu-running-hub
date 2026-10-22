@@ -1,5 +1,12 @@
 export type LockState = 'reserved' | 'queued' | 'running' | 'success' | 'failure';
 export type PublicState = 'queued' | 'running' | 'success' | 'failure';
+export type ReportTheme = 'black-green' | 'burgundy' | 'blue' | 'violet';
+export const normalizeTheme = (value: unknown = 'black-green'): ReportTheme => {
+  if (typeof value !== 'string' || !['black-green', 'burgundy', 'blue', 'violet'].includes(value)) {
+    throw new Error('invalid report theme');
+  }
+  return value as ReportTheme;
+};
 
 export interface LockRecord {
   runId: string;
@@ -9,6 +16,7 @@ export interface LockRecord {
   state: LockState;
   createdAt: number;
   updatedAt: number;
+  theme?: ReportTheme;
 }
 
 export interface DispatchDetails {
@@ -45,9 +53,9 @@ export const runExistsInActivities = (value: unknown, runId: string): boolean =>
   });
 };
 
-export const buildDispatchPayload = (runId: string, requestId: string) => ({
+export const buildDispatchPayload = (runId: string, requestId: string, theme?: ReportTheme) => ({
   ref: 'main',
-  inputs: { run_id: normalizeRunId(runId), request_id: requestId },
+  inputs: { run_id: normalizeRunId(runId), request_id: requestId, ...(theme ? { theme: normalizeTheme(theme) } : {}) },
   return_run_details: true,
 });
 
@@ -92,7 +100,8 @@ export const acquireLock = (
   runId: string,
   requestId: string,
   now = Date.now(),
-  ttlMs = 30 * 60 * 1000
+  ttlMs = 30 * 60 * 1000,
+  theme: ReportTheme = 'black-green'
 ): { created: boolean; record: LockRecord } => {
   const normalized = normalizeRunId(runId);
   if (isActiveLock(current, now, ttlMs)) return { created: false, record: current as LockRecord };
@@ -106,6 +115,7 @@ export const acquireLock = (
       state: 'reserved',
       createdAt: now,
       updatedAt: now,
+      theme,
     },
   };
 };

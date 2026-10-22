@@ -13,6 +13,16 @@ on:
         description: Worker request correlation ID
         required: true
         type: string
+      theme:
+        description: Presentation theme (one HTML and matching PNG)
+        required: false
+        default: black-green
+        type: choice
+        options:
+          - black-green
+          - burgundy
+          - blue
+          - violet
 
 concurrency:
   group: ayu-report-${{ inputs.run_id }}
@@ -73,12 +83,14 @@ jobs:
         env:
           RUN_ID: ${{ inputs.run_id }}
           REQUEST_ID: ${{ inputs.request_id }}
+          REPORT_THEME: ${{ inputs.theme || 'black-green' }}
         run: |
           python scripts/generate_report.py \
             --source-root "$GITHUB_WORKSPACE/running-page-source" \
             --target-root "$GITHUB_WORKSPACE/running-page-output" \
             --run-id "$RUN_ID" \
-            --request-id "$REQUEST_ID"
+            --request-id "$REQUEST_ID" \
+            --theme "$REPORT_THEME"
 
       - name: Publish report with conflict-safe manifest merge
         env:

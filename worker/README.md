@@ -6,9 +6,12 @@ Auth and keeps the isolated Phase 6 COROS collector Worker separate.
 
 ## Boundary
 
-- `GET /generate?run_id=<id>` only renders the status page.
-- The page then calls same-origin `POST /api/generate` with exactly
-  `{ "runId": "..." }`.
+- `GET /generate?run_id=<id>` only renders the four-theme selection/status page.
+- After selecting a theme and clicking **生成日报**, the page calls same-origin
+  `POST /api/generate` with `{ "runId": "...", "theme": "burgundy" }`.
+  The only accepted themes are `black-green` (default), `burgundy`, `blue` and
+  `violet`; old callers omitting theme remain compatible. Same-run/same-theme
+  requests deduplicate. A different theme while the run is locked returns 409.
 - The Worker verifies HTTP Basic Auth, confirms the run exists in
   `coffaye/running_page/master`, acquires a per-run SQLite-backed Durable Object
   lock, and dispatches the Hub workflow.

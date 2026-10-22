@@ -1,6 +1,6 @@
 # Built-in fixed-width PNG export
 
-Every report HTML must include a working button labeled `下载 PNG`. Do not use `window.print()`, PDF generation, screenshot APIs, or an image-generation model.
+Every report HTML must include a working button labeled `下载 PNG`. Do not use `window.print()`, PDF generation, screenshot APIs, or an image-generation model. Use references/themes.md and the request's AYU_THEME_TOKENS for palette; black-green descriptions below are the default only. Other themes replace foreground/accent/background consistently, including score denominator and recovery percent colors.
 
 ## Required behavior
 

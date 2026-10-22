@@ -34,6 +34,7 @@ from ayu_report_engine.native_agent import (
 )
 from ayu_report_engine.native_input import load_native_harness_bundle, native_input_from_coros_bundle
 from ayu_report_engine.report import StructuredReport
+from ayu_report_engine.themes import normalize_theme
 from ayu_report_engine.skill_provenance import skill_manifest_provenance
 from ayu_report_engine.version import (
     ENGINE_VERSION,
@@ -132,6 +133,7 @@ def native_manifest_entry(
         "nativeRuntimeVersion": native_provenance["nativeRuntimeVersion"],
         "nativeSkillSource": native_provenance["nativeSkillSource"],
         "nativeSkillSnapshotSha256": native_provenance["nativeSkillSnapshotSha256"],
+        "theme": normalize_theme(native_provenance.get("theme", "black-green")),
         "dataSource": "coros-mcp",
         "collectorContractVersion": "coros-daily-bundle-v1",
     }
@@ -285,7 +287,9 @@ def build_and_install(
     request_id: str,
     bundle_file: Path | None = None,
     semantic_overlay: Path | None = None,
+    theme: str = "black-green",
 ) -> dict[str, Any]:
+    theme = normalize_theme(theme)
     normalized = normalize_run_id(run_id)
     if not isinstance(request_id, str) or not request_id.strip():
         raise ValueError("request_id must be a non-empty string")
@@ -306,6 +310,7 @@ def build_and_install(
     _validate_native_production_config(config)
     material = load_native_material()
     native_input = native_input_from_coros_bundle(bundle)
+    native_input["reportTheme"] = theme
     agent_result = run_native_agent(material, native_input, config)
     generated_at = _now()
     result = replace_native_report_and_manifest(
@@ -314,12 +319,13 @@ def build_and_install(
         html=agent_result.final_html,
         config=config,
         generated_at=generated_at,
-        native_provenance=native_manifest_provenance(material),
+        native_provenance={**native_manifest_provenance(material), "theme": theme},
     )
     result["requestId"] = normalized_request_id
     result["pass1"] = agent_result.pass1
     result["pass2"] = agent_result.pass2
     result["finalValidation"] = agent_result.final_validation
+    result["theme"] = theme
     return result
 
 
@@ -329,6 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--request-id", required=True)
+    parser.add_argument("--theme", choices=("black-green", "burgundy", "blue", "violet"), default="black-green")
     parser.add_argument("--bundle-file", type=Path, help="Local harness bundle; production workflow uses COROS collector")
     parser.add_argument("--semantic-overlay", type=Path, help="Local harness overlay for a captured semantic bundle")
     args = parser.parse_args(argv)
@@ -340,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             request_id=args.request_id,
             bundle_file=args.bundle_file,
             semantic_overlay=args.semantic_overlay,
+            theme=args.theme,
         )
     except Exception as exc:
         failure: dict[str, Any] = {"status": "failure", "error": str(exc), "requestId": args.request_id}
