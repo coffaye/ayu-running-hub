@@ -112,10 +112,10 @@ The production sequence is fail-closed:
 ```text
 running_page identity guard
         -> signed COROS Daily Bundle
-        -> DailyRunContext
-        -> explicit DeepSeekAnalyzer
-        -> validated StructuredReport
-        -> deterministic HTML + browser Canvas PNG export
+        -> sanitized Native input
+        -> two-pass Native Skill Agent (draft + review)
+        -> self-contained safety / theme validation
+        -> approved HTML + browser Canvas PNG export
         -> conflict-safe running_page publication
 ```
 
@@ -135,3 +135,5 @@ Each newly generated Manifest entry records both the compatibility field
 `engineVersion` and the Hub identity field `hubVersion`, plus the current Hub
 commit, schema, prompt, renderer, model and reasoning settings. Existing
 entries remain readable during the production migration.
+
+The [2026-10-23 mobile presentation release](docs/MOBILE_PRESENTATION_20261023.md) keeps the approved violet outlines, orange ticket and interaction, removes duplicate top metadata in all themes, and adopts paginated 2160 × 3840px (9:16) PNG summaries. Local Skill templates and production Native references are released separately; existing reports remain available until explicitly regenerated.

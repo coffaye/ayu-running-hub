@@ -1,6 +1,6 @@
 ---
 name: ayu-running-reports
-description: 连接并检查 COROS MCP，使用内置的 COROS Workout Review 与 ShadowRunner 阶段—瓶颈框架，快速生成固定 Ayu Running 黑绿视觉的单次、每日、每周或每月跑步复盘 HTML，并内置一张固定宽度、内容过多时纵向增长的 A4 PNG 下载。用于用户要求连接或排查 COROS、复盘跑步、判断训练完成质量/瓶颈/负荷/恢复，或生成 Ayu Running 日报、周报、月报时；无需用户重复说明格式。
+description: 连接并检查 COROS MCP，使用内置的 COROS Workout Review 与 ShadowRunner 阶段—瓶颈框架，快速生成固定 Ayu Running 黑绿视觉的单次、每日、每周或每月跑步复盘 HTML，并内置一张手机竖屏 9:16 PNG 下载，长摘要按页导出。用于用户要求连接或排查 COROS、复盘跑步、判断训练完成质量/瓶颈/负荷/恢复，或生成 Ayu Running 日报、周报、月报时；无需用户重复说明格式。
 ---
 
 # Ayu Running Reports
@@ -108,13 +108,14 @@ description: 连接并检查 COROS MCP，使用内置的 COROS Workout Review �
 - 周报：`ayu_running_weekly_YYYY-Www.html`
 - 月报：`ayu_running_monthly_YYYY-MM.html`
 
-构建或修改页面前读取 [references/design-system.md](references/design-system.md)，实现 PNG 前读取 [references/png-export.md](references/png-export.md)。HTML 的 hero 是动态训练结论；最顶部品牌始终是绿色 `Ayu` + 白色 `Running`，页脚为 `Ayu Running`。
+构建或修改页面前读取 [references/design-system.md](references/design-system.md)，实现 PNG 前读取 [references/png-export.md](references/png-export.md)。HTML 的 hero 是动态训练结论；最顶部品牌使用当前主题的强调色 `Ayu` + 主文字色 `Running`，页脚为 `Ayu Running`。
 
 明日课表模块与其他内容使用同一连续单元风格，不为“明日”单独添加外框、渐变、胶囊或其他强调性容器。
+紫橙保留橙色主指标卡、深紫粗框、硬阴影、按钮悬停/按压反馈、平滑章节导航。不要把手机修复变成扁平重设计。PNG 橙色评分框用冻结的局部坐标正确包住分数，不能漂到后文或底部。
 完成质量、训练类型、负荷比和负荷状态等状态字段必须绑定本次 COROS/课表数据；示例值只能作为数据，不得把状态文字硬编码进 UI。
 
-PNG 必须由浏览器内的 HTML/JavaScript 代码直接绘制和下载，不使用图像生成模型，不调用系统打印。它是一张固定宽度、至少 A4 高度的纵向执行摘要，不是整页网页截图；内容过多时只增加长度，视觉与当前黑绿报告一致。
-PNG 画布底部不保留页脚内容：`DATA · COROS MCP · 日期`、`AYU RUNNING` 及任何页脚文字一律不绘制；可在最后一段实际内容下方按内容高度保留一条与顶部一致的无文字横线，不能把横线固定到画布底部，HTML 页面页脚仍按页面规范保留。
+PNG 必须由浏览器内的 HTML/JavaScript 代码直接绘制和下载，不使用图像生成模型，不调用系统打印。它是每页 2160 × 3840px（宽高 9:16）的手机摘要，配色与所选主题一致，HTML 保留完整分析。摘要过多时拆为多张同尺寸图片，不增高、不缩字、不裁切。
+HTML 与 PNG 顶部仅保留品牌和操作，不重复主题说明、日期与 COROS MCP 已同步行；日期/周期与数据来源只在底部出现一次。横线紧跟实际内容，之后保留简洁来源与周期，不在底部重复品牌。训练事实中的日期不受影响。
 PNG 负荷区将短期负荷、长期负荷、负荷比保持同一格式，负荷状态单独用绿色小绿点和绿色文字显示；恢复区只显示绿色小绿点与预计恢复时间，不写“当前恢复 ·”。
 
 ## 轻量检查与按需验证
@@ -133,4 +134,4 @@ PNG 负荷区将短期负荷、长期负荷、负荷比保持同一格式，负�
 - 用户明确要求测试、验收或检查视觉效果；
 - 用户报告按钮失效、排版错误、乱码、裁切或下载异常。
 
-完整验证时再检查桌面/移动布局、控制台、PNG 下载、`2480 × 3508 px` 尺寸和原图视觉。验证范围只覆盖发生变化或报告异常的部分。
+完整验证时再检查桌面/移动布局、控制台、PNG 下载、每页 `2160 × 3840 px` 尺寸与溢出分页和原图视觉。验证范围只覆盖发生变化或报告异常的部分。

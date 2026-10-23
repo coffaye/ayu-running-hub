@@ -1,28 +1,18 @@
-# Built-in fixed-width PNG export
+# 手机竖屏 PNG 导出
 
-Every report HTML must include a working button labeled `下载 PNG`. Do not use `window.print()`, PDF generation, screenshot APIs, or an image-generation model. Use references/themes.md and the request's AYU_THEME_TOKENS for palette; black-green descriptions below are the default only. Other themes replace foreground/accent/background consistently, including score denominator and recovery percent colors.
+每份 HTML 内置“下载 PNG”，由浏览器 Canvas 2D 代码绘制；不使用系统打印、PDF、生图或网页截图。
 
-## Required behavior
+- 每页 2160 × 3840 px，宽高 9:16。逻辑坐标 1080 × 1920，2 倍绘制。不要沿用 A4 最小高度或无限增长长图。
+- HTML 保留完整训练事实与分析，PNG 是精炼摘要。沿用所选主题的背景、主文字与强调色。紫橙保留深紫轮廓、硬阴影及正确包住分数的橙色评分框。
+- 先测量换行、块高、底部元信息所需空间，再绘制。块放不下时换到下一张同尺寸海报；长段落逐行分页，不缩字体、不裁切、不丢失已选择的摘要文字。每页都需边界检查。
+- 本 Native Agent 环境直接在完整 HTML 内实现 Canvas 2D，不能调用本地 renderer、第三方库或生图。正常只输出一张精简海报；确需多页时提供同尺寸分页下载。
+- 从本次 Native 输入与正文中精选精简证据、必要观察点及课表焦点，不复制固定日期/距离/配速/状态。HTML 保留全文，PNG 可以精简但不能改变事实；缺失字段省略，0 不是缺失。
+- HTML 与 PNG 顶部不放主题说明、日期或同步来源行。日期/周期与数据来源仅在每页底部出现一次，横线紧跟实际内容。不要在底部重复品牌；日期不是固定示例值。
+- 完成状态使用强调色小点、状态、·、训练类型；短期/长期负荷和负荷比等格式；负荷状态单独小点+强调色字。恢复时间仅小点+预计时长。恢复数值为主文字色，% 为较小强调色。
+- 明日课表：标签必须保留，课表名只出现一次。未知精确目标不补造；计划与实际分清。
+- 延迟绘制命令必须捕获当时的坐标值，例如 const frame=Object.freeze({x,y,width,height})，不能在 closure 中读取之后会改变的 flow cursor。
+- 使用本机中文系统字体，await document.fonts.ready。Canvas toBlob 后以 Blob URL 下载并回收。单页保留原文件名；多页加 _01、_02 等后缀，并提示浏览器可能需要允许多文件下载。
 
-- Generate and download a real PNG entirely in the browser with HTML/JavaScript code.
-- Keep the PNG width fixed at `2480 px` (`1240` logical units × 2) and use `3508 px` (`1754` logical units × 2) as the minimum portrait height. This is an A4-width export: when measured content exceeds the safe bottom margin, increase only the canvas height; never squeeze, clip, or widen the content.
-- Match the report's black-green design: `#080B09` background, `#56FFA3` accents, white primary text, faint grid, thin dividers, and minimal rounded emphasis.
-- In the load row, render short-term load, long-term load, and load ratio as three same-style values; render the load status separately as a small green dot plus green text. The recovery estimate is a separate small green-dot line showing only the estimated time, such as `约41小时完全恢复`.
-- Render the recovery percentage as a large white number with a smaller green `%`.
-- Render the completion line as a small green dot, the bound completion status, a `·` separator, and the bound training type.
-- Put the period, main conclusion, primary metrics, strongest evidence, main concern, load/recovery context, and upcoming focus on the image.
-- Keep the PNG deliberately concise. It is an executive summary composed specifically for A4, not a screenshot of the entire HTML.
-- Draw at logical A4 coordinates and scale the canvas context to the output resolution so spacing remains deterministic.
-- Use installed Chinese system fonts such as `Microsoft YaHei`, `PingFang SC`, and sans-serif fallbacks. Await `document.fonts.ready` before drawing.
-- Wrap text by measured width, reserve line height explicitly, and lay sections out in vertical flow. Preflight the wrapped line counts before creating the canvas, then push later sections down and grow the height as needed.
-- The exported PNG has no footer content at all: do not draw the HTML footer, source/date line such as `DATA · COROS MCP · ...`, `AYU RUNNING`, or any footer label. A single footer-free horizontal rule matching the top divider may be drawn immediately below the final content block, based on its measured bottom, followed by a blank lower margin; never anchor this rule to the fixed canvas bottom.
-- Export with `canvas.toBlob(..., 'image/png')`, create a temporary object URL, trigger a download, then revoke the URL.
-- Name downloads consistently, for example `Ayu_Running_2026-08-26.png`.
+## 仅模板变更时验证
 
-## Validation
-
-1. Trigger the button in a real browser and confirm a `.png` download event.
-2. Inspect dimensions with an image library and confirm the width is `2480 px` and the height is at least `3508 px`; long-content fixtures must increase height while keeping width unchanged.
-3. Open the original-size PNG and visually inspect the full image and key cropped regions.
-4. Confirm the bottom margin is clean and contains no footer text, source/date label, or brand label; if a footer-free rule is present, confirm it sits immediately below the measured final content rather than at the fixed canvas bottom.
-5. Fix clipped text, lone punctuation, low contrast, malformed Chinese glyphs, or content extending below the dynamically calculated bottom margin.
+实际点击下载，检查 PNG 每页尺寸、完整中文、无裁切、评分框位置及底部来源。用长摘要夹具确认分页而非增高，缺失值和 0 均正常。普通日报不用重复浏览器验收。

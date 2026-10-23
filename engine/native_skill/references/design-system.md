@@ -1,51 +1,17 @@
-# Ayu Running design system
+# Native Ayu Running presentation
 
-Default system: black-green. For all reports read references/themes.md; the request's selected theme overrides palette, typography and composition below. Apply the same selected theme to HTML and PNG. The Native runtime provides exact presentation tokens. Do not run local scripts or require external design skills in this isolated online runtime.
+The selected theme in references/themes.md overrides all old black-green-only visual wording. This isolated runtime outputs self-contained HTML directly; it does not invoke local renderer scripts.
 
-## Identity
-
-- Product name: `Ayu Running`.
-- Top fixed brand: `Ayu` in green and `Running` in white, preceded by a small green status dot.
-- The hero title is the report's dynamic conclusion, not the product name.
-- Footer right label: `Ayu Running`.
-- PNG export exception: the exported PNG omits the HTML footer content entirely, including the source/date line and `Ayu Running` footer label; a single footer-free horizontal rule matching the top divider may close the report immediately below the measured final content, followed by a clean bottom margin.
-- Score treatment: render the score value in white and the maximum denominator as a smaller green value; bind both from the report data.
-- Status treatment: use a small green dot followed by the bound completion status, a `·` separator, and the bound training type; never hardcode example status values.
-- Load treatment: keep short-term load, long-term load, and load ratio visually identical; put the bound load status in a separate green-dot/green-text item. Show the recovery estimate as a separate green-dot line with only the time estimate.
-- Recovery percentage treatment: keep the percentage number large and white, with a smaller green `%`.
-- Primary green: `#56FFA3`.
-- Page background: `#080B09`; soft background: `#0D120F`.
-- Primary text: `#F2F6F3`; secondary text around 70% opacity; metadata around 42% opacity.
-
-## Layout language
-
-Follow the DeepSeek Harness-inspired visual language without copying its content:
-
-- Use a narrow centered content container, large vertical whitespace, oversized conclusion typography, thin low-contrast dividers, a faint 90 px grid, and subtle green radial atmosphere.
-- Organize most content as continuous full-width sections. Do not create a wall of bordered cards.
-- Render the upcoming-plan module as the same continuous full-width section language as the other modules; do not give it a unique enclosing frame, gradient, border, or pill solely to mark it as upcoming.
-- Retain the white heading `明日课表：`, then show the upcoming workout name once in green. Do not append or repeat the workout name inside the white heading in either HTML or the Canvas PNG.
-- Reserve rounded tinted surfaces for one or two genuinely important modules such as interval evidence or the upcoming plan.
-- Do not add drop shadows to content modules.
-- Use pill shapes only for the fixed navigation and the `下载 PNG` button. Completion status and `Optimized` must be plain inline text, not pills.
-- Use monospace typography for metrics and small technical labels; use a clean Chinese system sans-serif for narrative text.
-- Use spaces rather than slashes in PNG section labels, for example `TODAY 今日结论`, `LOAD 近期负荷`, and `TOMORROW 明日课表`.
-
-## Required page structure
-
-1. Fixed translucent header with Ayu Running and `下载 PNG`.
-2. Hero with the dynamic training conclusion, a short session description, and one metadata row: `COROS MCP 已同步`, period/date, and primary metrics.
-3. Sticky pill navigation.
-4. Overview with score, conclusion, and open metric row.
-5. Training structure and charts.
-6. Evidence split into strengths and current concerns.
-7. Training load and recovery.
-8. Upcoming plan context when available.
-9. Minimal footer.
-
-## Interaction and responsive behavior
-
-- Navigation anchors must have a visible green active state. Initialize `总览` as active, switch the active item as its section crosses the reading position during scrolling, update immediately on tab clicks, and force the final item active at the document bottom. Keep `aria-current` synchronized with the visual state.
-- Desktop uses wide asymmetric grids. Under 800 px, collapse to a single column without horizontal overflow.
-- Keep charts as inline SVG so the report remains standalone.
-- Do not use external runtime dependencies for the report or PNG generation.
+- Header: Ayu Running plus 下载 PNG only. No theme subtitle, date stamp, journal day block, or COROS MCP 已同步 metadata near the Hero. Put the report period/date and actual source once in the bottom footer. Analytical dates in evidence remain unchanged.
+- Hero: one grounded 10–22-visible-character conclusion, fully shown; detailed reasons go into the body. Do not truncate with CSS or JavaScript.
+- Preserve actual metrics, score, completion/type, training structure, evidence, load/recovery and next plan. Unknown fields are omitted, never filled with examples. 0 is a real value.
+- Four chapters: 总览 / 训练结构 / 关键证据 / 负荷恢复. Scroll and clicks synchronize active appearance and aria-current; the final chapter activates at the bottom.
+- Violet retains the original lavender/orange visual system: bold type, orange primary-metric ticket, solid 2–3px dark-purple outlines, restrained offset hard shadows and physical hover/press button response. Fix mobile widths and wrapping without flattening cards or removing its feature ticket.
+- On phones use a single-column layout, 16px narrative, comfortably spaced rows, and 44px controls. Keep metric units smaller so values do not wrap awkwardly. Training-card details may move to a full-width second row without removing their frame.
+- Preserve smooth chapter scrolling, button hover/press feedback and visible focus. Use transform/opacity for motion, do not block clicks, and honor prefers-reduced-motion.
+- Next-plan module remains continuous, not a uniquely framed special card. Keep 明日课表： neutral; render the actual workout name once in accent color.
+- Status: accent dot + completion + · + type. Score foreground number, smaller accent /10; large foreground recovery number with smaller accent %. Short load, long load and ratio have identical style; bound load status and recovery estimate each have a separate accent-dot line.
+- Black-green remains continuous, quiet and white/green; burgundy remains wine/rose paper; blue remains an analytical workspace. Do not apply violet cards to all themes.
+- No external libraries, fonts or images. Inline SVG charts use supplied comparable data; keep readable units and an accessible data table.
+- PNG is a 9:16 executive summary, 2160 × 3840px per page, matching the selected theme. The full analysis remains HTML. Overflow becomes additional same-size pages, never a taller image, smaller type or clipping. Metadata belongs once at the bottom after a rule following actual content.
+- Deferred Canvas commands must capture immutable coordinates at enqueue time. Preserve the violet orange score ticket around the score; never read a mutable final y inside its deferred closure.

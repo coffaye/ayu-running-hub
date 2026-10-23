@@ -1,12 +1,12 @@
 {
   "runtimeVersion": "native-agent-runtime-v1",
   "sourceRepository": "coffaye/ayu-running-reports",
-  "nativeSkillSource": "ayu-running-reports:frozen-snapshot:fd6a42dabfb2c4fac0fce352de1a86799c3af426cc0d02a21f59c5791e94b085",
-  "snapshotSha256": "fd6a42dabfb2c4fac0fce352de1a86799c3af426cc0d02a21f59c5791e94b085",
+  "nativeSkillSource": "ayu-running-reports:frozen-snapshot:e6d6753e61f97c1038e04de516884670fbed4cd824306150ba28f86d90af015c",
+  "snapshotSha256": "e6d6753e61f97c1038e04de516884670fbed4cd824306150ba28f86d90af015c",
   "files": {
     "SKILL.md": {
       "path": "engine/native_skill/SKILL.md",
-      "sha256": "808f6c6700025652d2eb107e395d6a70ccaadc0c80ac98338e5c51dff508719f"
+      "sha256": "6c988d51f1eeb502472891f427e4f64bc5d10585268631851a29190ea8973383"
     },
     "references/report-modes.md": {
       "path": "engine/native_skill/references/report-modes.md",
@@ -26,15 +26,15 @@
     },
     "references/design-system.md": {
       "path": "engine/native_skill/references/design-system.md",
-      "sha256": "be0654f8289a2dd4d24bfe9638103f91824df8ffe09faf5be23b83e905ab304c"
+      "sha256": "5d0264427da35b4a7e4ede3e0a19d4cab7356d88ba7b40c71251907d076b5ed9"
     },
     "references/png-export.md": {
       "path": "engine/native_skill/references/png-export.md",
-      "sha256": "4b8b4ccb08e4170c0494cc976708551108714d5bd90a81973680a63799a29fab"
+      "sha256": "870e1649e501dc17e0fe427a2ec8bdb7e6e4b32b0ddc8cd285e89372adc0f25c"
     },
     "references/themes.md": {
       "path": "engine/native_skill/references/themes.md",
-      "sha256": "29cca488fca2fdab0d1701fee8fff45f7e2f00059b7cf2e9edfbb5430116d261"
+      "sha256": "73248f68681b6462185110fec6e34bd78b06d032d723c41dafc376e70789c11a"
     }
   }
 }

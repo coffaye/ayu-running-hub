@@ -14,7 +14,7 @@ STYLES = {
     "black-green": "Reorganized training console: calm white conclusion; green signals, clear metrics beneath the Hero once, continuous sections, no glow or card wall. Keep the score subordinate to the conclusion.",
     "burgundy": "Wine-red training journal: rose-white paper, clearly burgundy headline and rules, plum body ink, Chinese Song-style display type, spacious editorial reading. Do not drift into near-black brown.",
     "blue": "Blue-white training laboratory: cool analytical workspace, desktop chapter sidebar / mobile sticky horizontal navigation, clear metric grid and evidence charts with actual supplied data only.",
-    "violet": "Lavender and orange sports poster: bold sans-serif, orange (#FFBD81) primary metric ticket, dark violet outlines, restrained hard shadows. Upcoming training is a continuous section, not a uniquely framed card.",
+    "violet": "Lavender and orange sports poster: bold sans-serif, orange (#FFBD81) primary metric ticket, dark violet outlines, restrained hard shadows, physical button hover/press feedback. Preserve the original style on phones; never flatten its purple frames or remove the orange feature ticket. Upcoming training is a continuous section, not a uniquely framed card.",
 }
 
 def normalize_theme(value: str = "black-green") -> str:
@@ -38,7 +38,7 @@ def theme_instructions(value: str = "black-green") -> str:
         "In inline CSS set :root variables --ayu-bg, --ayu-ink, --ayu-accent to the same values "
         "and use them for the page background, primary text and accent. Both HTML and PNG must "
         "share this palette. Keep 明日课表： as the neutral label and render the workout name once "
-        "in accent color. No PNG footer; closing rule follows measured content. Hero is a complete "
+        "in accent color. Header has brand and action only: remove theme subtitles, header dates, journal date stamps, and Hero sync metadata. Keep source and period/date once in the bottom HTML and PNG footer. PNG pages are exactly 2160 x 3840 pixels (portrait 9:16): select a readable executive summary, paginate overflow without growing height, shrinking fonts or clipping. Closing rule follows measured content. Preserve the violet orange score frame around its score and freeze its coordinates when enqueueing drawing commands; never capture a mutable final y. Preserve smooth scrolling, hover/press feedback and reduced-motion support. Hero is a complete "
         "10–22 visible-character conclusion, never CSS/JS truncated.\n"
     )
 
